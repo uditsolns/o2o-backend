@@ -7,9 +7,9 @@ use App\Http\Requests\Wallet\TopUpWalletRequest;
 use App\Http\Requests\Wallet\UpdateWalletRequest;
 use App\Http\Resources\WalletResource;
 use App\Models\Customer;
+use App\Models\CustomerWallet;
 use App\Services\WalletService;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 
 class CustomerWalletController extends Controller
 {
@@ -29,7 +29,7 @@ class CustomerWalletController extends Controller
 
     public function store(StoreWalletRequest $request, Customer $customer): JsonResponse
     {
-        $this->authorize('manage', \App\Models\CustomerWallet::class);
+        $this->authorize('manage', CustomerWallet::class);
 
         abort_if($customer->wallet()->exists(), 422, 'Wallet already exists for this customer.');
 
@@ -43,7 +43,7 @@ class CustomerWalletController extends Controller
         $wallet = $customer->wallet;
         abort_if(!$wallet, 404, 'Wallet not configured for this customer.');
 
-        $this->authorize('manage', $wallet);
+        $this->authorize('manage', CustomerWallet::class);
 
         $wallet = $this->service->update($wallet, $request->validated());
 
@@ -55,7 +55,7 @@ class CustomerWalletController extends Controller
         $wallet = $customer->wallet;
         abort_if(!$wallet, 404, 'Wallet not configured for this customer.');
 
-        $this->authorize('manage', $wallet);
+        $this->authorize('manage', CustomerWallet::class);
 
         $wallet = $this->service->topUp($wallet, $request->amount, $request->user(), $request->remarks);
 

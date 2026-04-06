@@ -6,11 +6,14 @@ use App\Http\Requests\Customer\CustomerActionRequest;
 use App\Http\Requests\Customer\StoreCustomerRequest;
 use App\Http\Requests\Customer\UpdateCustomerRequest;
 use App\Http\Resources\CustomerResource;
+use App\Http\Resources\SealResource;
 use App\Models\Customer;
 use App\Services\CustomerService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Spatie\QueryBuilder\AllowedFilter;
+use Spatie\QueryBuilder\QueryBuilder;
 
 class CustomerController extends Controller
 {
@@ -113,13 +116,13 @@ class CustomerController extends Controller
         return response()->json($customer->documents()->latest()->get());
     }
 
-    public function seals(Customer $customer): JsonResponse
+    public function seals(Customer $customer): AnonymousResourceCollection
     {
         $this->authorize('view', $customer);
 
-        return response()->json(
-            $customer->seals()->with('order')->latest()->paginate(50)
-        );
+        $seals = $customer->seals()->with('order:id,order_ref')->latest()->paginate(50);
+
+        return SealResource::collection($seals);
     }
 
     public function orders(Customer $customer): JsonResponse

@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\Pricing\StorePricingTierRequest;
-use App\Http\Resources\WalletResource;
 use App\Models\Customer;
 use App\Models\SealPricingTier;
 use App\Services\WalletService;
@@ -23,9 +22,9 @@ class SealPricingController extends Controller
     {
         $customerId = $request->user()->isClientUser()
             ? $request->user()->customer_id
-            : $request->route('customer')?->id;
+            : $request->route('customer');
 
-        abort_if(!$customerId, 400, 'customer context required.');
+        abort_if(!$customerId, 400, 'Customer context required.');
 
         $tiers = SealPricingTier::where('customer_id', $customerId)
             ->where('is_active', true)
@@ -60,6 +59,8 @@ class SealPricingController extends Controller
         $request->validate(['quantity' => ['required', 'integer', 'min:20']]);
 
         $customer = $request->user()->customer;
+        abort_if(is_null($customer), 400, 'This action is unauthorized.');
+
         $wallet = $customer->wallet;
         abort_if(!$wallet, 422, 'Wallet not configured.');
 

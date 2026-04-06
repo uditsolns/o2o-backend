@@ -48,7 +48,6 @@ class RolePermissionSeeder extends Seeder
     ];
 
     private array $customerAdminPermissions = [
-        'customer.view', 'customer.update',
         'user.view', 'user.create', 'user.update', 'user.delete',
         'port.view',
         'location.view', 'location.create', 'location.update', 'location.delete',

@@ -12,7 +12,7 @@ class TripDocumentService
 {
     public function store(Trip $trip, UploadedFile $file, string $docType, User $uploadedBy): TripDocument
     {
-        $path = $file->store("trips/{$trip->id}/documents", 'private');
+        $path = $file->store("trips/{$trip->id}/documents");
 
         return TripDocument::create([
             'trip_id' => $trip->id,

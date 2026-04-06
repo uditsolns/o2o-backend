@@ -22,7 +22,7 @@ class CustomerService
             $customer = Customer::create([...$data, 'created_by_id' => $createdBy->id]);
 
             $role = Role::where('name', 'customer_admin')->firstOrFail();
-            $plainPassword = Str::random(32);
+            $plainPassword = Str::password(12);
             $user = User::create([
                 'role_id' => $role->id,
                 'customer_id' => $customer->id,

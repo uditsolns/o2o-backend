@@ -48,10 +48,7 @@ class OnboardingService
         User         $uploadedBy
     ): CustomerDocument
     {
-        $path = $file->store(
-            "customers/{$customer->id}/documents",
-            'private'
-        );
+        $path = $file->store("customers/{$customer->id}/documents");
 
         return $customer->documents()->create([
             'uploaded_by_id' => $uploadedBy->id,

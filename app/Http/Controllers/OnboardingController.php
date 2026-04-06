@@ -15,6 +15,7 @@ use App\Models\CustomerDocument;
 use App\Services\OnboardingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Storage;
 
 class OnboardingController extends Controller
 {
@@ -73,7 +74,6 @@ class OnboardingController extends Controller
         if ($request->hasFile('id_proof')) {
             $path = $request->file('id_proof')->store(
                 "customers/{$request->user()->customer_id}/signatories",
-                'private'
             );
             $data['id_proof_url'] = $path;
         }
@@ -95,11 +95,10 @@ class OnboardingController extends Controller
 
         if ($request->hasFile('id_proof')) {
             if ($signatory->id_proof_url) {
-                \Storage::delete($signatory->id_proof_url);
+                Storage::delete($signatory->id_proof_url);
             }
             $data['id_proof_url'] = $request->file('id_proof')->store(
                 "customers/{$request->user()->customer_id}/signatories",
-                'private'
             );
         }
 

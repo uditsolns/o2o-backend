@@ -38,7 +38,7 @@ class CustomerLocationController extends Controller
             ->allowedSorts(['name', 'city', 'location_type', 'created_at'])
             ->allowedIncludes(['createdBy'])
             ->defaultSort('name')
-            ->paginate(30)
+            ->paginate($request->input('perPage', 30))
             ->appends($request->query());
 
         return CustomerLocationResource::collection($locations);

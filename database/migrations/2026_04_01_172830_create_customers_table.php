@@ -25,7 +25,7 @@ return new class extends Migration {
             $table->timestamp('sepio_token_expires_at')->nullable();
             $table->string('gst_number', 20)->nullable();
             $table->string('pan_number', 20)->nullable();
-            $table->string('iec_number', 20)->unique();
+            $table->string('iec_number', 20)->nullable()->unique();
             $table->string('cin_number', 25)->nullable();
             $table->string('tin_number', 30)->nullable();
             $table->string('cha_number', 30)->nullable();

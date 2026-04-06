@@ -22,6 +22,7 @@ class Customer extends Model
     protected $casts = [
         'onboarding_status' => CustomerOnboardingStatus::class,
         'il_approved_at' => 'datetime',
+        'is_active' => 'boolean',
     ];
 
     public function createdBy(): BelongsTo
@@ -67,6 +68,11 @@ class Customer extends Model
     public function wallet(): HasOne
     {
         return $this->hasOne(CustomerWallet::class);
+    }
+
+    public function sealPricingTiers(): HasMany
+    {
+        return $this->hasMany(SealPricingTier::class, 'customer_id');
     }
 
     public function sealOrders(): HasMany

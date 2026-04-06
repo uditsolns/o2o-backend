@@ -4,7 +4,7 @@ namespace App\Policies;
 
 use App\Models\{CustomerLocation, User};
 
-class LocationPolicy
+class CustomerLocationPolicy
 {
     public function viewAny(User $user): bool
     {

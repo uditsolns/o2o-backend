@@ -12,9 +12,9 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
-class SealOrderService
+readonly class SealOrderService
 {
-    public function __construct(private readonly WalletService $walletService)
+    public function __construct(private WalletService $walletService)
     {
     }
 
@@ -79,9 +79,7 @@ class SealOrderService
 
         $remarksFilePath = null;
         if (isset($data['remarks_file'])) {
-            $remarksFilePath = $data['remarks_file']->store(
-                "orders/{$order->id}/remarks", 'private'
-            );
+            $remarksFilePath = $data['remarks_file']->store("orders/{$order->id}/remarks");
         }
 
         $order->update([
@@ -104,9 +102,7 @@ class SealOrderService
 
         $remarksFilePath = null;
         if (isset($data['remarks_file'])) {
-            $remarksFilePath = $data['remarks_file']->store(
-                "orders/{$order->id}/remarks", 'private'
-            );
+            $remarksFilePath = $data['remarks_file']->store("orders/{$order->id}/remarks");
         }
 
         // Refund advance balance if it was debited

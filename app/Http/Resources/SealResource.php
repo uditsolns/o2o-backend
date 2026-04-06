@@ -18,7 +18,6 @@ class SealResource extends JsonResource
             'sepio_status' => $this->sepio_status,
             'last_scan_at' => $this->last_scan_at,
             'delivered_at' => $this->delivered_at,
-            'trip_id' => $this->trip_id,
             'order' => $this->whenLoaded('order', fn() => [
                 'id' => $this->order->id,
                 'order_ref' => $this->order->order_ref,

@@ -12,6 +12,8 @@ use App\Services\UserService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Spatie\QueryBuilder\AllowedFilter;
+use Spatie\QueryBuilder\QueryBuilder;
 
 class UserController extends Controller
 {
@@ -53,10 +55,24 @@ class UserController extends Controller
     {
         $this->authorize('viewAny', User::class);
 
-        $users = $this->service->paginate(
-            $request->user(),
-            $request->only('status', 'customer_id')
-        );
+        $users = QueryBuilder::for(User::class)
+            ->allowedFilters([
+                AllowedFilter::exact('role_id'),
+                AllowedFilter::exact('customer_id'),
+                AllowedFilter::exact('status'),
+                AllowedFilter::callback('search', function ($query, $value) {
+                    $query->where(function ($q) use ($value) {
+                        $q->where('name', 'like', "%{$value}%")
+                            ->orWhere('email', 'like', "%{$value}%")
+                            ->orWhere('mobile', 'like', "%{$value}%");
+                    });
+                }),
+            ])
+            ->allowedIncludes(['role', 'customer'])
+            ->allowedSorts(['name', 'email', 'created_at', 'last_login_at'])
+            ->defaultSort('-created_at')
+            ->paginate($request->input('perPage', 20))
+            ->appends($request->query());
 
         return UserResource::collection($users);
     }

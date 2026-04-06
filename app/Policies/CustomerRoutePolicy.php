@@ -4,7 +4,7 @@ namespace App\Policies;
 
 use App\Models\{CustomerRoute, User};
 
-class RoutePolicy
+class CustomerRoutePolicy
 {
     public function viewAny(User $user): bool
     {

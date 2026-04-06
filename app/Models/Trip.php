@@ -72,7 +72,7 @@ class Trip extends Model
 
     public function seal(): BelongsTo
     {
-        return $this->belongsTo(Seal::class);
+        return $this->belongsTo(Seal::class, 'seal_id');
     }
 
     public function route(): BelongsTo

@@ -10,8 +10,6 @@ use App\Models\Customer;
 use App\Models\Seal;
 use App\Models\SealOrder;
 use App\Models\Trip;
-use App\Models\User;
-use Illuminate\Support\Facades\DB;
 
 class DashboardService
 {
@@ -52,14 +50,14 @@ class DashboardService
                 'tampered' => Seal::where('status', SealStatus::Tampered)->count(),
                 'lost' => Seal::where('status', SealStatus::Lost)->count(),
             ],
-            'recent_orders' => SealOrder::with('customer')
+            'recent_orders' => SealOrder::with('customer:id,company_name,primary_contact_name')
                 ->latest('ordered_at')
                 ->limit(5)
                 ->get(['id', 'order_ref', 'customer_id', 'status', 'total_amount', 'ordered_at']),
-            'recent_trips' => Trip::with('seal')
+            'recent_trips' => Trip::with('seal:id,seal_number,status')
                 ->latest()
                 ->limit(5)
-                ->get(['id', 'trip_ref', 'customer_id', 'status', 'trip_type', 'dispatch_date', 'created_at']),
+                ->get(['id', 'seal_id', 'trip_ref', 'customer_id', 'status', 'trip_type', 'dispatch_date', 'created_at']),
             'tampered_seals' => Seal::with('trip')
                 ->where('status', SealStatus::Tampered)
                 ->latest('last_scan_at')
@@ -101,17 +99,17 @@ class DashboardService
             ],
             'wallet' => $this->clientWalletSummary($customerId),
             'recent_trips' => Trip::where('customer_id', $customerId)
-                ->with('seal')
+                ->with('seal:id,seal_number,status')
                 ->latest()
                 ->limit(5)
-                ->get(['id', 'trip_ref', 'status', 'trip_type', 'dispatch_date', 'created_at']),
+                ->get(['id', 'seal_id', 'trip_ref', 'status', 'trip_type', 'dispatch_date', 'created_at']),
             'recent_orders' => SealOrder::where('customer_id', $customerId)
                 ->latest('ordered_at')
                 ->limit(5)
                 ->get(['id', 'order_ref', 'status', 'quantity', 'total_amount', 'ordered_at']),
             'tampered_seals' => Seal::where('customer_id', $customerId)
                 ->where('status', SealStatus::Tampered)
-                ->with('trip')
+                ->with('trip:id,trip_ref,status')
                 ->latest('last_scan_at')
                 ->limit(5)
                 ->get(['id', 'seal_number', 'trip_id', 'last_scan_at']),
@@ -152,7 +150,7 @@ class DashboardService
             ->when(isset($filters['to']),
                 fn($q) => $q->whereDate('dispatch_date', '<=', $filters['to']));
 
-        $trips = $query->with('seal', 'customer:id,company_name')
+        $trips = (clone $query)->with('seal', 'customer:id,company_name')
             ->orderByDesc('created_at')
             ->paginate(50);
 
@@ -188,7 +186,7 @@ class DashboardService
             ->when(isset($filters['to']),
                 fn($q) => $q->whereDate('created_at', '<=', $filters['to']));
 
-        $seals = $query->with('order:id,order_ref', 'customer:id,company_name')
+        $seals = (clone $query)->with('order:id,order_ref', 'customer:id,company_name')
             ->orderByDesc('created_at')
             ->paginate(50);
 
@@ -230,7 +228,7 @@ class DashboardService
             ->when(isset($filters['to']),
                 fn($q) => $q->whereDate('ordered_at', '<=', $filters['to']));
 
-        $orders = $query->with('customer:id,company_name', 'orderedBy:id,name')
+        $orders = (clone $query)->with('customer:id,company_name', 'orderedBy:id,name')
             ->orderByDesc('ordered_at')
             ->paginate(50);
 

@@ -17,11 +17,19 @@ class UserResource extends JsonResource
             'email' => $this->email,
             'mobile' => $this->mobile,
             'status' => $this->status,
-            'role' => [
+            'role' => $this->whenLoaded('role', fn() => [
                 'name' => $this->role->name,
-                'permissions' => $this->role->permissions->pluck('name'),
-            ],
-            'customer_id' => $this->customer_id,
+                'permissions' => $this->when($this->role->relationLoaded('permissions'),
+                    $this->role->permissions->pluck('name'))
+            ]),
+            'customer' => $this->whenLoaded('customer', fn() => [
+                'id' => $this->customer->id,
+                'first_name' => $this->customer->first_name,
+                'last_name' => $this->customer->last_name,
+                'email' => $this->customer->email,
+                'mobile' => $this->customer->mobile,
+                'company_name' => $this->customer->company_name,
+            ]),
             'last_login_at' => $this->last_login_at,
             'created_at' => $this->created_at,
         ];

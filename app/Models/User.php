@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\UserStatus;
+use App\Scopes\TenantScope;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -54,14 +55,14 @@ class User extends Authenticatable
         return is_null($this->customer_id);
     }
 
+    protected static function booted(): void
+    {
+        static::addGlobalScope(new TenantScope());
+    }
+
     public function isClientUser(): bool
     {
         return !is_null($this->customer_id);
-    }
-
-    public function hasRole(string $role): bool
-    {
-        return $this->role->name == $role;
     }
 
     public function hasPermission(string $permission): bool

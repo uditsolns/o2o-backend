@@ -37,7 +37,7 @@ class SealOrderController extends Controller
             ->allowedSorts(['ordered_at', 'total_amount', 'status'])
             ->allowedIncludes(['billingLocation', 'shippingLocation', 'orderedBy', 'ilApprovedBy'])
             ->defaultSort('-ordered_at')
-            ->paginate(20)
+            ->paginate($request->input('perPage', 20))
             ->appends($request->query());
 
         return SealOrderResource::collection($orders);

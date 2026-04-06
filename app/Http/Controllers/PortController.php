@@ -38,7 +38,7 @@ class PortController extends Controller
             ])
             ->allowedSorts(['name', 'code', 'port_category', 'created_at'])
             ->defaultSort('name')
-            ->paginate(50)
+            ->paginate($request->input('perPage', 50))
             ->appends($request->query());
 
         return PortResource::collection($ports);
