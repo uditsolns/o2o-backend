@@ -1,8 +1,19 @@
 <?php
 
-use Illuminate\Foundation\Inspiring;
-use Illuminate\Support\Facades\Artisan;
+use App\Console\Commands\SeedSepioPortsCommand;
+use App\Jobs\SepioSealAllocationPollJob;
+use App\Jobs\SepioSealStatusSyncJob;
+use App\Jobs\SepioVerificationStatusPollJob;
+use Illuminate\Support\Facades\Schedule;
 
-Artisan::command('inspire', function () {
-    $this->comment(Inspiring::quote());
-})->purpose('Display an inspiring quote');
+Schedule::command(SeedSepioPortsCommand::class)
+    ->weekly()->sundays()->at('02:00');
+
+Schedule::job(SepioVerificationStatusPollJob::class)
+    ->everyThirtyMinutes();
+
+Schedule::job(SepioSealAllocationPollJob::class)
+    ->hourly();
+
+Schedule::job(SepioSealStatusSyncJob::class)
+    ->everyFifteenMinutes();

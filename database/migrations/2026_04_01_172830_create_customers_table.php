@@ -21,8 +21,10 @@ return new class extends Migration {
             $table->enum('onboarding_status', CustomerOnboardingStatus::values())
                 ->default(CustomerOnboardingStatus::Pending->value);
             $table->string('sepio_company_id', 100)->nullable();
-            $table->string('sepio_token')->nullable();
+            $table->text('sepio_token')->nullable();
             $table->timestamp('sepio_token_expires_at')->nullable();
+            $table->text('sepio_credentials')->nullable()
+                ->comment('Encrypted {email, password} used for Sepio login');
             $table->string('gst_number', 20)->nullable();
             $table->string('pan_number', 20)->nullable();
             $table->string('iec_number', 20)->nullable()->unique();

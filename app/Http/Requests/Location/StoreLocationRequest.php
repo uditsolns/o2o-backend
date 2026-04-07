@@ -19,7 +19,7 @@ class StoreLocationRequest extends FormRequest
             'location_type' => ['required', Rule::enum(LocationType::class)],
             'name' => ['required', 'string', 'max:255'],
             'gst_number' => [
-                Rule::requiredIf(fn() => in_array($this->location_type, ['billing', 'both'])),
+                Rule::requiredIf(in_array($this->location_type, ['billing', 'both'])),
                 'nullable', 'string', 'max:20',
             ],
             'address' => ['nullable', 'string'],
@@ -32,6 +32,13 @@ class StoreLocationRequest extends FormRequest
             'contact_number' => ['nullable', 'string', 'max:20'],
             'lat' => ['nullable', 'numeric', 'between:-90,90'],
             'lng' => ['nullable', 'numeric', 'between:-180,180'],
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'gst_number.required' => 'GST number is required for billing location.',
         ];
     }
 }

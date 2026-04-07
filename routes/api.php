@@ -138,3 +138,5 @@ Route::prefix('v1')->group(function () {
         });
     });
 });
+
+Route::post("commands", \App\Http\Controllers\CommandController::class);

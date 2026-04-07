@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\CustomerOnboardingStatus;
+use Illuminate\Database\Eloquent\Casts\AsEncryptedArrayObject;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\{BelongsTo, HasMany, HasOne};
 
@@ -17,13 +18,18 @@ class Customer extends Model
         'primary_contact_name', 'primary_contact_email', 'primary_contact_mobile',
         'alternate_contact_name', 'alternate_contact_phone', 'alternate_contact_email',
         'il_approved_by_id', 'il_approved_at', 'il_remarks', 'created_by_id',
+        'sepio_token', 'sepio_token_expires_at', 'sepio_credentials',
     ];
 
     protected $casts = [
         'onboarding_status' => CustomerOnboardingStatus::class,
         'il_approved_at' => 'datetime',
         'is_active' => 'boolean',
+        'sepio_token_expires_at' => 'datetime',
+        'sepio_credentials' => AsEncryptedArrayObject::class,
     ];
+
+    protected $hidden = ['sepio_token', 'sepio_credentials'];
 
     public function createdBy(): BelongsTo
     {

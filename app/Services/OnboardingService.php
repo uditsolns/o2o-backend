@@ -6,7 +6,6 @@ use App\Enums\CustomerOnboardingStatus;
 use App\Models\AuthorizedSignatory;
 use App\Models\Customer;
 use App\Models\CustomerDocument;
-use App\Models\CustomerPort;
 use App\Models\Port;
 use App\Models\User;
 use Illuminate\Http\UploadedFile;

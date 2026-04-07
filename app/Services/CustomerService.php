@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\CustomerOnboardingStatus;
 use App\Enums\UserStatus;
+use App\Jobs\SepioOnboardCustomerJob;
 use App\Models\Customer;
 use App\Models\Role;
 use App\Models\User;
@@ -56,6 +57,9 @@ class CustomerService
             'il_approved_at' => now(),
             'il_remarks' => $data['remarks'] ?? null,
         ]);
+
+        // Single job handles: register → login → sync locations → upload docs
+        SepioOnboardCustomerJob::dispatch($customer->fresh());
 
         return $customer->fresh();
     }

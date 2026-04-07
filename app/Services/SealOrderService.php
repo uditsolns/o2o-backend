@@ -4,13 +4,11 @@ namespace App\Services;
 
 use App\Enums\SealOrderStatus;
 use App\Enums\WalletCoastingType;
-use App\Models\Customer;
+use App\Jobs\SepioPlaceOrderJob;
 use App\Models\CustomerPort;
 use App\Models\SealOrder;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
 
 readonly class SealOrderService
 {
@@ -89,6 +87,9 @@ readonly class SealOrderService
             'il_remarks' => $data['remarks'] ?? null,
             'il_remark_file_url' => $remarksFilePath,
         ]);
+
+        // Forward to Sepio immediately after IL approval
+        SepioPlaceOrderJob::dispatch($order->fresh());
 
         return $order->fresh();
     }
