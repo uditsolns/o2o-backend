@@ -44,7 +44,7 @@ class TripController extends Controller
             ->allowedSorts(['trip_ref', 'status', 'dispatch_date', 'created_at'])
             ->allowedIncludes(['seal', 'route', 'createdBy', 'documents'])
             ->defaultSort('-created_at')
-            ->paginate($request->input('perPage', 20))
+            ->paginate($request->query('per_page', 20))
             ->appends($request->query());
 
         return TripResource::collection($trips);

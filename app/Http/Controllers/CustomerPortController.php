@@ -35,7 +35,7 @@ class CustomerPortController extends Controller
             ->allowedSorts(['name', 'code', 'port_category', 'created_at'])
             ->allowedIncludes(['port'])
             ->defaultSort('name')
-            ->paginate($request->input('perPage', 50))
+            ->paginate($request->query('per_page', 50))
             ->appends($request->query());
 
         return CustomerPortResource::collection($ports);

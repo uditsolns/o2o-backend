@@ -40,7 +40,7 @@ class CustomerController extends Controller
             ->allowedSorts(['company_name', 'created_at', 'onboarding_status'])
             ->allowedIncludes(['approvedBy', 'wallet'])
             ->defaultSort('-created_at')
-            ->paginate(20)
+            ->paginate($request->query('per_page', 20))
             ->appends($request->query());
 
         return CustomerResource::collection($customers);

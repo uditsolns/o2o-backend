@@ -38,7 +38,7 @@ class CustomerRouteController extends Controller
                 'originPort', 'destinationPort',
             ])
             ->defaultSort('name')
-            ->paginate($request->input('perPage', 30))
+            ->paginate($request->query('per_page', 30))
             ->appends($request->query());
 
         return CustomerRouteResource::collection($routes);

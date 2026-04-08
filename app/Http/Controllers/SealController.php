@@ -37,7 +37,7 @@ class SealController extends Controller
             ->allowedSorts(['seal_number', 'status', 'last_scan_at', 'created_at'])
             ->allowedIncludes(['order', 'trip'])
             ->defaultSort('-created_at')
-            ->paginate($request->input('perPage', 50))
+            ->paginate($request->query('per_page', 50))
             ->appends($request->query());
 
         return SealResource::collection($seals);

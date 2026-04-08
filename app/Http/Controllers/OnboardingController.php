@@ -28,6 +28,8 @@ class OnboardingController extends Controller
      */
     public function status(Request $request): JsonResponse
     {
+        abort_if($request->user()->isPlatformUser(), 400, 'This action is unauthorized.');
+
         $customer = $request->user()->customer->load(
             'signatories', 'documents', 'ports'
         );

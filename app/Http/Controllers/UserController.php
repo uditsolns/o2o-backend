@@ -71,7 +71,7 @@ class UserController extends Controller
             ->allowedIncludes(['role', 'customer'])
             ->allowedSorts(['name', 'email', 'created_at', 'last_login_at'])
             ->defaultSort('-created_at')
-            ->paginate($request->input('perPage', 20))
+            ->paginate($request->query('per_page', 20))
             ->appends($request->query());
 
         return UserResource::collection($users);
