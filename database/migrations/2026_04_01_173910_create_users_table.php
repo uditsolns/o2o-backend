@@ -25,7 +25,7 @@ return new class extends Migration {
             $table->foreignId('created_by_id')->nullable()->constrained('users')->nullOnDelete();
             $table->rememberToken();
             $table->timestamps();
-            
+
             $table->index('status');
         });
 
@@ -43,6 +43,5 @@ return new class extends Migration {
     {
         Schema::dropIfExists('users');
         Schema::dropIfExists('password_reset_tokens');
-        Schema::dropIfExists('sessions');
     }
 };

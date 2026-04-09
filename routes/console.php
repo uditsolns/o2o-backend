@@ -6,6 +6,8 @@ use App\Jobs\SepioSealStatusSyncJob;
 use App\Jobs\SepioVerificationStatusPollJob;
 use Illuminate\Support\Facades\Schedule;
 
+Schedule::command('telescope:prune')->daily();
+
 Schedule::command(SeedSepioPortsCommand::class)
     ->weekly()->sundays()->at('02:00');
 

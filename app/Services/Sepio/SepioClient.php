@@ -106,7 +106,7 @@ readonly class SepioClient
             $token = $this->authService->refreshToken($customer);
             $response = $method === 'get'
                 ? $http->withToken($token)->get($endpoint, $data)
-                : $http->withToken($token)->asMultipart()->post($endpoint, $data);
+                : $http->withToken($token)->post($endpoint, $data);
         }
 
         $this->logIfFailed($endpoint, $response);
@@ -120,7 +120,7 @@ readonly class SepioClient
             Log::warning('Sepio API error', [
                 'endpoint' => $endpoint,
                 'status' => $response->status(),
-                'body' => $response->json(),
+                'body' => $response->body(),   // was ->json(), which can be null
             ]);
         }
     }
