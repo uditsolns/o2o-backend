@@ -28,16 +28,16 @@ class SepioOnboardCustomerJob implements ShouldQueue
             'ports', 'locations', 'documents',
         ]);
 
-        // Step 1 — Register (no auth needed)
+        // Step 1 — Register company (unauthenticated)
         $service->registerCompany($customer);
 
         // Reload to get sepio_company_id + fresh credentials
         $customer->refresh();
 
-        // Step 2 — Sync all locations (needs JWT — SepioClient handles login internally)
-        // $service->syncAllLocations($customer);
+        // Step 2 — Sync all locations as billing + shipping addresses
+        $service->syncAllLocations($customer);
 
-        // Step 3 — Upload all KYC documents (no auth needed per API docs)
+        // Step 3 — Upload all KYC documents
         $service->uploadAllDocuments($customer);
 
         Log::info('SepioOnboardCustomerJob completed', ['customer_id' => $customer->id]);

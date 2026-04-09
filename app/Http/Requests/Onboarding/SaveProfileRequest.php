@@ -18,31 +18,44 @@ class SaveProfileRequest extends FormRequest
         $customerId = $this->user()->customer_id;
 
         return [
-            'first_name' => ['sometimes', 'string', 'max:100'],
-            'last_name' => ['sometimes', 'string', 'max:100'],
-            'company_name' => ['sometimes', 'string', 'max:255'],
-            'mobile' => ['sometimes', 'string', 'max:20'],
+            // Personal — required
+            'first_name' => ['required', 'string', 'max:100'],
+            'last_name' => ['required', 'string', 'max:100'],
+            'mobile' => ['required', 'string', 'max:20'],
             'email' => ['sometimes', 'email', Rule::unique('customers', 'email')->ignore($customerId)],
-            'company_type' => ['sometimes', Rule::enum(CompanyType::class)],
+
+            // Company — required
+            'company_name' => ['required', 'string', 'max:255'],
+            'company_type' => ['required', Rule::enum(CompanyType::class)],
+            'iec_number' => [
+                'required', 'string', 'max:20',
+                Rule::unique('customers', 'iec_number')->ignore($customerId),
+            ],
+
+            // Company — optional
             'industry_type' => ['sometimes', 'nullable', 'string', 'max:100'],
             'gst_number' => ['sometimes', 'nullable', 'string', 'max:20'],
             'pan_number' => ['sometimes', 'nullable', 'string', 'max:20'],
-            'iec_number' => ['sometimes', 'string', 'max:20', Rule::unique('customers', 'iec_number')->ignore($customerId)],
             'cin_number' => ['sometimes', 'nullable', 'string', 'max:25'],
             'tin_number' => ['sometimes', 'nullable', 'string', 'max:30'],
             'cha_number' => ['sometimes', 'nullable', 'string', 'max:30'],
-            // Billing
-            'billing_address' => ['sometimes', 'nullable', 'string'],
-            'billing_landmark' => ['sometimes', 'nullable', 'string', 'max:255'],
-            'billing_city' => ['sometimes', 'nullable', 'string', 'max:100'],
-            'billing_state' => ['sometimes', 'nullable', 'string', 'max:100'],
-            'billing_pincode' => ['sometimes', 'nullable', 'string', 'max:10'],
+
+            // Billing address — required
+            'billing_address' => ['required', 'string'],
+            'billing_city' => ['required', 'string', 'max:100'],
+            'billing_state' => ['required', 'string', 'max:100'],
             'billing_country' => ['sometimes', 'nullable', 'string', 'max:100'],
-            // Primary contact
-            'primary_contact_name' => ['sometimes', 'nullable', 'string', 'max:255'],
-            'primary_contact_email' => ['sometimes', 'nullable', 'email'],
-            'primary_contact_mobile' => ['sometimes', 'nullable', 'string', 'max:20'],
-            // Alternate contact
+            'billing_pincode' => ['required', 'string', 'max:10'],
+
+            // Billing address — optional
+            'billing_landmark' => ['sometimes', 'nullable', 'string', 'max:255'],
+
+            // Primary contact — required
+            'primary_contact_name' => ['required', 'string', 'max:255'],
+            'primary_contact_email' => ['required', 'email'],
+            'primary_contact_mobile' => ['required', 'string', 'max:20'],
+
+            // Alternate contact — optional
             'alternate_contact_name' => ['sometimes', 'nullable', 'string', 'max:255'],
             'alternate_contact_phone' => ['sometimes', 'nullable', 'string', 'max:20'],
             'alternate_contact_email' => ['sometimes', 'nullable', 'email'],

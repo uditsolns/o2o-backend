@@ -25,7 +25,6 @@ class CustomerLocationController extends Controller
 
         $locations = QueryBuilder::for(CustomerLocation::class)
             ->allowedFilters([
-                AllowedFilter::exact('location_type'),
                 AllowedFilter::exact('is_active'),
                 AllowedFilter::callback('search', function ($query, $value) {
                     $query->where(function ($q) use ($value) {
@@ -35,7 +34,7 @@ class CustomerLocationController extends Controller
                     });
                 }),
             ])
-            ->allowedSorts(['name', 'city', 'location_type', 'created_at'])
+            ->allowedSorts(['name', 'city', 'created_at'])
             ->allowedIncludes(['createdBy'])
             ->defaultSort('name')
             ->paginate($request->query('per_page', 30))

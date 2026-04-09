@@ -15,6 +15,28 @@ enum CustomerDocType: string
 
     public static function values(): array
     {
-        return array_column(self::cases(), "value");
+        return array_column(self::cases(), 'value');
+    }
+
+    public static function required(): array
+    {
+        return array_map(
+            fn(self $type) => $type->value,
+            array_filter(
+                self::cases(),
+                fn(self $type) => $type->isRequired()
+            )
+        );
+    }
+
+    public function isRequired(): bool
+    {
+        return in_array($this, [
+            self::GstCrt,
+            self::PanCard,
+            self::IecCert,
+            self::CertificateOfRegistration,
+            self::SelfStuffingCert,
+        ], true);
     }
 }

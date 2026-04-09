@@ -10,6 +10,12 @@ class LocationService
 {
     public function store(array $data, User $createdBy): CustomerLocation
     {
+        $customerId = $createdBy->isClientUser()
+            ? $createdBy->customer_id
+            : null;
+
+        abort_if(!$customerId, 400, 'Customer context required.');
+
         $location = CustomerLocation::create([
             ...$data,
             'customer_id' => $createdBy->customer_id,

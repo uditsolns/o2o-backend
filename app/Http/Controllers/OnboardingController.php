@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\CustomerDocType;
 use App\Enums\CustomerOnboardingStatus;
 use App\Http\Requests\Onboarding\SavePortsRequest;
 use App\Http\Requests\Onboarding\SaveProfileRequest;
@@ -48,7 +49,7 @@ class OnboardingController extends Controller
             'checklist' => [
                 'profile_complete' => $this->isProfileComplete($customer),
                 'has_signatories' => $customer->signatories->isNotEmpty(),
-                'required_docs' => ['gst_cert', 'pan_card', 'iec_cert'],
+                'required_docs' => CustomerDocType::required(),
                 'uploaded_doc_types' => $uploadedDocTypes,
                 'has_ports' => $customer->ports->isNotEmpty(),
             ],
@@ -170,7 +171,7 @@ class OnboardingController extends Controller
         ]);
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
+    // Helpers
 
     private function denyIfSubmitted(Request $request): void
     {
@@ -197,12 +198,20 @@ class OnboardingController extends Controller
     private function isProfileComplete(mixed $customer): bool
     {
         $required = [
-            'company_type', 'gst_number', 'pan_number', 'iec_number',
-            'billing_address', 'billing_city', 'billing_state', 'billing_pincode',
+            'company_type',
+            'gst_number',
+            'pan_number',
+            'iec_number',
+            'billing_address',
+            'billing_city',
+            'billing_state',
+            'billing_pincode',
         ];
 
         foreach ($required as $field) {
-            if (empty($customer->$field)) return false;
+            if (empty($customer->$field)) {
+                return false;
+            }
         }
 
         return true;
@@ -210,8 +219,18 @@ class OnboardingController extends Controller
 
     private function canSubmit(mixed $customer): bool
     {
+        $uploadedDocTypes = $customer->documents
+            ->map(fn($d) => is_string($d->doc_type) ? $d->doc_type : $d->doc_type->value)
+            ->all();
+
+        $hasRequiredDocs = empty(array_diff(
+            CustomerDocType::required(),
+            $uploadedDocTypes
+        ));
+
         return $this->isProfileComplete($customer)
             && $customer->signatories->isNotEmpty()
-            && $customer->ports->isNotEmpty();
+            && $customer->ports->isNotEmpty()
+            && $hasRequiredDocs;
     }
 }

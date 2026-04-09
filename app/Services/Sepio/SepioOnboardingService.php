@@ -2,7 +2,7 @@
 
 namespace App\Services\Sepio;
 
-use App\Enums\LocationType;
+use App\Enums\CustomerDocType;
 use App\Models\Customer;
 use App\Models\CustomerDocument;
 use App\Models\CustomerLocation;
@@ -35,7 +35,7 @@ readonly class SepioOnboardingService
                 'cfsLocation' => $this->formatPortList($cfsItems, first: true),
                 'chaUser' => $customer->cha_number ?? '',
                 'chaId' => $customer->cha_number ?? '',
-                'distributorId' => config('sepio.distributor_id'),  // was null
+                'distributorId' => config('sepio.distributor_id'),
                 'sepioURL' => 'sepio/companies',
             ],
             'primaryContactInfo' => [
@@ -47,7 +47,7 @@ readonly class SepioOnboardingService
                 'conpassword' => $plainPassword,
                 'isAdmin' => true,
             ],
-            'register_from_type' => config('sepio.register_from_type'),  // root level, confirmed name
+            'register_from_type' => config('sepio.register_from_type'),
         ]);
 
         if ($response->failed() || empty($response->json('company_id'))) {
@@ -58,7 +58,6 @@ readonly class SepioOnboardingService
 
         $sepioCompanyId = (string)$response->json('company_id');
 
-        // Store company_id + encrypted credentials immediately
         $customer->update([
             'sepio_company_id' => $sepioCompanyId,
             'sepio_credentials' => [
@@ -85,41 +84,34 @@ readonly class SepioOnboardingService
         }
     }
 
+    /**
+     * Push a location to Sepio as BOTH billing and shipping address.
+     */
     public function syncLocation(Customer $customer, CustomerLocation $location): void
     {
-        // TODO: doubt -> Only shipping address will no work with sepio (LocationType::Shipping)
-        $billingAddresses = [];
-        $shippingAddresses = [];
-
-        if (in_array($location->location_type, [LocationType::Billing, LocationType::Both])) {
-            $billingAddresses[] = [
-                'billingCompanyName' => $customer->company_name,
-                'address' => $location->address,
-                'landmark' => $location->landmark ?? '',
-                'zipcode' => $location->pincode,
-                'city' => $location->city,
-                'state' => strtoupper($location->state),
-                'gstno' => $location->gst_number ?? $customer->gst_number ?? '',
-            ];
-        }
-
-        if (in_array($location->location_type, [LocationType::Shipping, LocationType::Both])) {
-            $shippingAddresses[] = [
-                'address' => $location->address,
-                'landmark' => $location->landmark ?? '',
-                'city' => $location->city,
-                'state' => strtoupper($location->state),
-                'zipcode' => $location->pincode,
-            ];
-        }
-
-        if (empty($billingAddresses) && empty($shippingAddresses)) return;
-
         $response = $this->client->postAs($customer, '/registrationModule/updateaddress', [
             'createdBy' => $customer->primary_contact_email ?? $customer->email,
             'companyId' => $customer->sepio_company_id,
-            'billingAddressInfo' => ['billAddresses' => $billingAddresses],
-            'shippingAddressInfo' => ['addresses' => $shippingAddresses],
+            'billingAddressInfo' => [
+                'billAddresses' => [[
+                    'billingCompanyName' => $customer->company_name,
+                    'address' => $location->address,
+                    'landmark' => $location->landmark ?? '',
+                    'zipcode' => $location->pincode,
+                    'city' => $location->city,
+                    'state' => strtoupper($location->state),
+                    'gstno' => $location->gst_number ?? $customer->gst_number ?? '',
+                ]],
+            ],
+            'shippingAddressInfo' => [
+                'addresses' => [[
+                    'address' => $location->address,
+                    'landmark' => $location->landmark ?? '',
+                    'city' => $location->city,
+                    'state' => strtoupper($location->state),
+                    'zipcode' => $location->pincode,
+                ]],
+            ],
             'fclFlag' => 1,
             'cfsFlag' => 1,
             'warehouseFlag' => 0,
@@ -134,27 +126,23 @@ readonly class SepioOnboardingService
             return;
         }
 
-        Log::debug('Address updated', $response->json());
+        Log::debug('Sepio address updated', $response->json());
 
-        $this->pullAndStoreAddressId($customer, $location, $location->location_type);
+        $this->pullAndStoreAddressId($customer, $location);
     }
 
     // Upload all existing documents
 
     public function uploadAllDocuments(Customer $customer): void
     {
-        $documents = $customer->documents()->get();
-
-        foreach ($documents as $document) {
+        foreach ($customer->documents as $document) {
             $this->uploadDocument($customer, $document);
         }
     }
 
     public function uploadDocument(Customer $customer, CustomerDocument $document): void
     {
-        $docType = is_string($document->doc_type)
-            ? $document->doc_type
-            : $document->doc_type->value;
+        $docType = $document->doc_type;
 
         $mapping = $this->docTypeMapping($docType);
         if (!$mapping) return;
@@ -171,8 +159,7 @@ readonly class SepioOnboardingService
 
         $extension = strtolower(pathinfo($document->file_name, PATHINFO_EXTENSION));
 
-        // Build payload WITHOUT 'file' key — file goes as binary attachment
-        $payload = $docType === 'cha_auth_letter'
+        $payload = $docType === CustomerDocType::ChaAuthLetter
             ? [
                 'companyId' => $customer->sepio_company_id,
                 'dateNow' => now()->valueOf(),
@@ -224,30 +211,56 @@ readonly class SepioOnboardingService
         ]);
     }
 
-    private function pullAndStoreAddressId(
-        Customer         $customer,
-        CustomerLocation $location,
-        LocationType     $locationType
-    ): void
-    {
-        $endpoint = in_array($locationType, [LocationType::Billing, LocationType::Both])
-            ? '/registrationModule/getbillinglistnew'
-            : '/registrationModule/getshippinglist';
+    // Private helpers
 
-        $response = $this->client->getAs($customer, $endpoint, [
+    /**
+     * Pull both the billing and shipping address lists from Sepio,
+     * match by pincode + city, and store both IDs on our CustomerLocation.
+     * Sepio creates two separate address records even though we sent the same
+     * address payload, so we need to pull from each endpoint independently.
+     */
+    private function pullAndStoreAddressId(Customer $customer, CustomerLocation $location): void
+    {
+        $updates = [];
+
+        // Billing address ID
+        $billingResponse = $this->client->getAs($customer, '/registrationModule/getbillinglistnew', [
             'companyId' => $customer->sepio_company_id,
         ]);
 
-        if ($response->failed()) return;
+        if ($billingResponse->successful()) {
+            Log::debug('Sepio billing address list', $billingResponse->json());
 
-        Log::debug("Address List Response: ", $response->json());
+            $matched = collect($billingResponse->json('data', []))->first(
+                fn($addr) => strtoupper($addr['zip'] ?? '') === strtoupper($location->pincode ?? '') &&
+                    strtoupper($addr['city'] ?? '') === strtoupper($location->city ?? '')
+            );
 
-        $matched = collect($response->json('data', []))->first(fn($addr) => strtoupper($addr['zip'] ?? '') === strtoupper($location->pincode ?? '') &&
-            strtoupper($addr['city'] ?? '') === strtoupper($location->city ?? '')
-        );
+            if ($matched && !empty($matched['addressId'])) {
+                $updates['sepio_billing_address_id'] = $matched['addressId'];
+            }
+        }
 
-        if ($matched && !empty($matched['addressId'])) {
-            $location->update(['sepio_address_id' => $matched['addressId']]);
+        // Shipping address ID
+        $shippingResponse = $this->client->getAs($customer, '/registrationModule/getshippinglist', [
+            'companyId' => $customer->sepio_company_id,
+        ]);
+
+        if ($shippingResponse->successful()) {
+            Log::debug('Sepio shipping address list', $shippingResponse->json());
+
+            $matched = collect($shippingResponse->json('data', []))->first(
+                fn($addr) => strtoupper($addr['zip'] ?? '') === strtoupper($location->pincode ?? '') &&
+                    strtoupper($addr['city'] ?? '') === strtoupper($location->city ?? '')
+            );
+
+            if ($matched && !empty($matched['addressId'])) {
+                $updates['sepio_shipping_address_id'] = $matched['addressId'];
+            }
+        }
+
+        if (!empty($updates)) {
+            $location->update($updates);
         }
     }
 
@@ -257,15 +270,15 @@ readonly class SepioOnboardingService
         return $first ? ($strings->first() ?? '') : $strings->implode(',');
     }
 
-    private function docTypeMapping(string $docType): ?array
+    private function docTypeMapping(CustomerDocType $docType): ?array
     {
         return match ($docType) {
-            'gst_cert' => ['endpoint' => '/kycData/addkyc', 'documentType' => 'gstCopy', 'documentName' => 'GST'],
-            'iec_cert' => ['endpoint' => '/kycData/addkyc', 'documentType' => 'iecCopy', 'documentName' => 'IEC'],
-            'pan_card' => ['endpoint' => '/kycData/addkyc', 'documentType' => 'panCopy', 'documentName' => 'PAN'],
-            'self_stuffing_cert' => ['endpoint' => '/kycData/addselfstuffing', 'documentType' => 'selfCopy', 'documentName' => 'CHEQ'],
-            'certificate_of_registration' => ['endpoint' => '/kycData/addCORdoc', 'documentType' => 'certificateofRegistrationCompnay', 'documentName' => 'CFSREGISTRATION'],
-            'cha_auth_letter' => ['endpoint' => '/kycData/addchaAuthLetter', 'documentType' => 'chaAuthLetter', 'documentName' => 'CHA'],
+            CustomerDocType::GstCrt => ['endpoint' => '/kycData/addkyc', 'documentType' => 'gstCopy', 'documentName' => 'GST'],
+            CustomerDocType::IecCert => ['endpoint' => '/kycData/addkyc', 'documentType' => 'iecCopy', 'documentName' => 'IEC'],
+            CustomerDocType::PanCard => ['endpoint' => '/kycData/addkyc', 'documentType' => 'panCopy', 'documentName' => 'PAN'],
+            CustomerDocType::SelfStuffingCert => ['endpoint' => '/kycData/addselfstuffing', 'documentType' => 'selfCopy', 'documentName' => 'CHEQ'],
+            CustomerDocType::CertificateOfRegistration => ['endpoint' => '/kycData/addCORdoc', 'documentType' => 'certificateofRegistrationCompnay', 'documentName' => 'CFSREGISTRATION'],
+            CustomerDocType::ChaAuthLetter => ['endpoint' => '/kycData/addchaAuthLetter', 'documentType' => 'chaAuthLetter', 'documentName' => 'CHA'],
             default => null,
         };
     }

@@ -2,9 +2,7 @@
 
 namespace App\Http\Requests\Location;
 
-use App\Enums\LocationType;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rule;
 
 class UpdateLocationRequest extends FormRequest
 {
@@ -16,7 +14,6 @@ class UpdateLocationRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'location_type' => ['sometimes', Rule::enum(LocationType::class)],
             'name' => ['sometimes', 'string', 'max:255'],
             'gst_number' => ['sometimes', 'nullable', 'string', 'max:20'],
             'address' => ['sometimes', 'nullable', 'string'],

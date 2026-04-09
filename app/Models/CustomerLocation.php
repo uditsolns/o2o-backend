@@ -2,7 +2,6 @@
 
 namespace App\Models;
 
-use App\Enums\LocationType;
 use App\Scopes\TenantScope;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -10,13 +9,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class CustomerLocation extends Model
 {
     protected $fillable = [
-        'customer_id', 'location_type', 'name', 'gst_number', 'address', 'landmark',
+        'customer_id', 'name', 'gst_number', 'address', 'landmark',
         'city', 'state', 'pincode', 'country', 'contact_person', 'contact_number',
-        'lat', 'lng', 'sepio_address_id', 'is_active', 'created_by_id',
+        'lat', 'lng', 'sepio_billing_address_id', 'sepio_shipping_address_id', 'is_active', 'created_by_id',
     ];
 
     protected $casts = [
-        'location_type' => LocationType::class,
         'is_active' => 'boolean',
     ];
 
@@ -40,13 +38,12 @@ class CustomerLocation extends Model
         return $q->where('is_active', true);
     }
 
-    public function scopeBilling($q)
+    /**
+     * Whether this location has been fully synced to Sepio
+     * (both billing and shipping address IDs present).
+     */
+    public function isSepioSynced(): bool
     {
-        return $q->whereIn('location_type', ['billing', 'both']);
-    }
-
-    public function scopeShipping($q)
-    {
-        return $q->whereIn('location_type', ['shipping', 'both']);
+        return !empty($this->sepio_billing_address_id) && !empty($this->sepio_shipping_address_id);
     }
 }

@@ -13,7 +13,6 @@ class CustomerLocationResource extends JsonResource
     {
         return [
             'id' => $this->id,
-            'location_type' => $this->location_type,
             'name' => $this->name,
             'gst_number' => $this->gst_number,
             'address' => $this->address,
@@ -27,7 +26,8 @@ class CustomerLocationResource extends JsonResource
             'lat' => $this->lat,
             'lng' => $this->lng,
             'is_active' => $this->is_active,
-            'sepio_address_id' => $this->sepio_address_id,
+            'sepio_billing_address_id' => $this->sepio_billing_address_id,
+            'sepio_shipping_address_id' => $this->sepio_shipping_address_id,
             'created_by' => $this->whenLoaded('createdBy', fn() => [
                 'id' => $this->createdBy->id,
                 'name' => $this->createdBy->name,

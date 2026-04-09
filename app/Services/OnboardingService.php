@@ -3,9 +3,11 @@
 namespace App\Services;
 
 use App\Enums\CustomerOnboardingStatus;
+use App\Jobs\SepioUploadDocumentJob;
 use App\Models\AuthorizedSignatory;
 use App\Models\Customer;
 use App\Models\CustomerDocument;
+use App\Models\CustomerLocation;
 use App\Models\Port;
 use App\Models\User;
 use Illuminate\Http\UploadedFile;
@@ -17,7 +19,52 @@ class OnboardingService
     public function saveProfile(Customer $customer, array $data): Customer
     {
         $customer->update($data);
-        return $customer->fresh();
+        $customer = $customer->fresh();
+
+        // Upsert a CustomerLocation from the billing address so it can be
+        // synced to Sepio later (after company registration).
+        $this->upsertBillingLocation($customer);
+
+        return $customer;
+    }
+
+    /**
+     * Create or update the single "billing" CustomerLocation derived from the
+     * customer's billing address fields.  We name it after the company so it's
+     * identifiable in the UI.
+     */
+    private function upsertBillingLocation(Customer $customer): void
+    {
+        // Only create if the minimum required address fields are present
+        if (
+            empty($customer->billing_address) ||
+            empty($customer->billing_city) ||
+            empty($customer->billing_state) ||
+            empty($customer->billing_pincode)
+        ) {
+            return;
+        }
+
+        $attributes = [
+            'name' => $customer->company_name,
+            'gst_number' => $customer->gst_number,
+            'address' => $customer->billing_address,
+            'landmark' => $customer->billing_landmark,
+            'city' => $customer->billing_city,
+            'state' => $customer->billing_state,
+            'pincode' => $customer->billing_pincode,
+            'country' => $customer->billing_country ?? 'India',
+            'contact_person' => $customer->primary_contact_name,
+            'contact_number' => $customer->primary_contact_mobile,
+            'is_active' => true,
+        ];
+
+        // Use updateOrCreate keyed on customer_id + name so re-submitting
+        // profile updates the same record rather than creating duplicates.
+        CustomerLocation::updateOrCreate(
+            ['customer_id' => $customer->id, 'name' => $customer->company_name],
+            array_merge($attributes, ['customer_id' => $customer->id])
+        );
     }
 
     public function addSignatory(Customer $customer, array $data): AuthorizedSignatory
@@ -49,13 +96,19 @@ class OnboardingService
     {
         $path = $file->store("customers/{$customer->id}/documents");
 
-        return $customer->documents()->create([
+        $document = $customer->documents()->create([
             'uploaded_by_id' => $uploadedBy->id,
             'doc_type' => $data['doc_type'],
             'doc_number' => $data['doc_number'] ?? null,
             'file_name' => $file->getClientOriginalName(),
             'url' => $path,
         ]);
+
+        if ($customer->sepio_company_id) {
+            SepioUploadDocumentJob::dispatch($customer, $document);
+        }
+
+        return $document;
     }
 
     public function deleteDocument(CustomerDocument $document): void
@@ -119,7 +172,10 @@ class OnboardingService
         }
 
         $requiredDocTypes = ['gst_cert', 'pan_card', 'iec_cert'];
-        $uploaded = $customer->documents()->pluck('doc_type')->map(fn($t) => is_string($t) ? $t : $t->value)->all();
+        $uploaded = $customer->documents()
+            ->pluck('doc_type')
+            ->map(fn($t) => is_string($t) ? $t : $t->value)
+            ->all();
 
         foreach ($requiredDocTypes as $type) {
             if (!in_array($type, $uploaded, true)) {

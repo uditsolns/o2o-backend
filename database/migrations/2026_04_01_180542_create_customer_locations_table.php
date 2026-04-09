@@ -1,6 +1,5 @@
 <?php
 
-use App\Enums\LocationType;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -14,7 +13,6 @@ return new class extends Migration {
         Schema::create('customer_locations', function (Blueprint $table) {
             $table->id();
             $table->foreignId('customer_id')->constrained()->cascadeOnDelete();
-            $table->enum('location_type', LocationType::values());
             $table->string('name');
             $table->string('gst_number', 20)->nullable();
             $table->text('address')->nullable();
@@ -27,7 +25,8 @@ return new class extends Migration {
             $table->string('contact_number', 20)->nullable();
             $table->decimal('lat', 10, 7)->nullable();
             $table->decimal('lng', 10, 7)->nullable();
-            $table->string('sepio_address_id', 100)->nullable();
+            $table->string('sepio_billing_address_id', 100)->nullable();
+            $table->string('sepio_shipping_address_id', 100)->nullable();
             $table->boolean('is_active')->default(true);
             $table->foreignId('created_by_id')->nullable()->constrained('users')->nullOnDelete();
             $table->timestamps();

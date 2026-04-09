@@ -20,9 +20,15 @@ readonly class SepioOrderService
         $shippingLocation = $order->shippingLocation;
 
         abort_if(
-            !$billingLocation?->sepio_address_id || !$shippingLocation?->sepio_address_id,
+            !$billingLocation?->sepio_billing_address_id,
             422,
-            'Billing or shipping location is not synced with Sepio yet. Please try again in a moment.'
+            'Billing location is not synced with Sepio yet (missing billing address ID). Please try again in a moment.'
+        );
+
+        abort_if(
+            !$shippingLocation?->sepio_shipping_address_id,
+            422,
+            'Shipping location is not synced with Sepio yet (missing shipping address ID). Please try again in a moment.'
         );
 
         // Resolve port strings from customer_ports
@@ -43,8 +49,8 @@ readonly class SepioOrderService
         $response = $this->client->postAs($customer, '/companyadmin/placedorder', [
             'sealType' => 'bolt',
             'companyId' => $customer->sepio_company_id,
-            'shippingAddressId' => $shippingLocation->sepio_address_id,
-            'billingAddressId' => $billingLocation->sepio_address_id,
+            'shippingAddressId' => $shippingLocation->sepio_shipping_address_id,
+            'billingAddressId' => $billingLocation->sepio_billing_address_id,
             'createdBy' => $customer->primary_contact_email ?? $customer->email,
 //            'orderType' => $wallet->costing_type->value === 'credit' ? 'credit' : 'advance',
             'orderType' => 'credit',
@@ -96,8 +102,8 @@ readonly class SepioOrderService
 
         $order->update([
             'sepio_order_id' => $sepioOrderId,
-            'sepio_billing_address_id' => $billingLocation->sepio_address_id,
-            'sepio_shipping_address_id' => $shippingLocation->sepio_address_id,
+            'sepio_billing_address_id' => $billingLocation->sepio_billing_address_id,
+            'sepio_shipping_address_id' => $shippingLocation->sepio_shipping_address_id,
             'status' => SealOrderStatus::MfgPending,
         ]);
 
