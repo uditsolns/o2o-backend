@@ -12,6 +12,9 @@
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script>
+        window.APP_URL = "{{ config('app.url') }}";
+    </script>
     <style>
         *, *::before, *::after {
             box-sizing: border-box;
@@ -100,7 +103,7 @@
         const {useState, useEffect, useRef, useCallback} = React;
 
         const BASE = window.__SEPIO_BASE;
-        const API = '/api/v1';
+        const API = window.APP_URL + '/api/v1';
         const T_KEY = 'sepio_insp_tok';
 
         /* ── Auth helpers ─────────────────────────────────────────────────────────── */
