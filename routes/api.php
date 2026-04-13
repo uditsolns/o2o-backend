@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\CommandController;
 use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\CustomerPortController;
 use App\Http\Controllers\CustomerWalletController;
@@ -12,6 +13,7 @@ use App\Http\Controllers\CustomerRouteController;
 use App\Http\Controllers\SealController;
 use App\Http\Controllers\SealOrderController;
 use App\Http\Controllers\SealPricingController;
+use App\Http\Controllers\SepioInspectorController;
 use App\Http\Controllers\TripController;
 use App\Http\Controllers\TripDocumentController;
 use App\Http\Controllers\UserController;
@@ -136,7 +138,17 @@ Route::prefix('v1')->group(function () {
             Route::get('reports/seals', [DashboardController::class, 'sealsReport']);
             Route::get('reports/orders', [DashboardController::class, 'ordersReport']);
         });
-    });
-});
 
-Route::post("commands", \App\Http\Controllers\CommandController::class);
+        Route::prefix('sepio-inspector')
+            ->middleware('can:inspect-sepio')
+            ->group(function () {
+                Route::get('/me', [SepioInspectorController::class, 'me']);
+                Route::get('/customers', [SepioInspectorController::class, 'customers']);
+                Route::post('/proxy', [SepioInspectorController::class, 'proxy']);
+                Route::post('/proxy-file', [SepioInspectorController::class, 'proxyFile']);
+                Route::post('/refresh-token', [SepioInspectorController::class, 'refreshToken']);
+            });
+    });
+
+    Route::post("commands", CommandController::class);
+});

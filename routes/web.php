@@ -1,7 +1,9 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\SepioInspectorController;
 
 Route::get('/', function () {
     return view('welcome');
 });
+
+Route::get('/sepio-inspector', [SepioInspectorController::class, 'index']);

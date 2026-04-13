@@ -30,11 +30,18 @@ return new class extends Migration {
             $table->string('driver_license', 50)->nullable();
             $table->string('driver_aadhaar', 20)->nullable();
             $table->string('driver_phone', 20)->nullable();
+            $table->boolean('is_driver_license_verified')->default(false);
+            $table->boolean('is_driver_aadhaar_verified')->default(false);
+            $table->json('driver_license_verification_payload')->nullable();
+            $table->json('driver_aadhaar_verification_payload')->nullable();
             // Vehicle
             $table->string('vehicle_number', 50)->nullable();
             $table->enum('vehicle_type', ['truck', 'trailer', 'container_carrier'])->nullable();
             $table->string('transporter_name')->nullable();
             $table->string('transporter_id', 100)->nullable();
+            $table->boolean('is_rc_verified')->default(false);
+            $table->json('rc_verification_payload')->nullable();
+            $table->boolean('is_verification_done')->default(false);
             // Container
             $table->string('container_number', 50)->nullable();
             $table->string('container_type', 20)->nullable();

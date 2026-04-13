@@ -26,11 +26,18 @@ class StoreTripRequest extends FormRequest
             'driver_license' => ['nullable', 'string', 'max:50'],
             'driver_aadhaar' => ['nullable', 'string', 'max:20'],
             'driver_phone' => ['nullable', 'string', 'max:20'],
+            'is_driver_license_verified' => ['sometimes', 'boolean'],
+            'is_driver_aadhaar_verified' => ['sometimes', 'boolean'],
+            'driver_license_verification_payload' => ['nullable', 'json'],
+            'driver_aadhaar_verification_payload' => ['nullable', 'json'],
             // Vehicle
             'vehicle_number' => ['nullable', 'string', 'max:50'],
             'vehicle_type' => ['nullable', Rule::in(['truck', 'trailer', 'container_carrier'])],
             'transporter_name' => ['nullable', 'string', 'max:255'],
             'transporter_id' => ['nullable', 'string', 'max:100'],
+            'is_rc_verified' => ['sometimes', 'boolean'],
+            'is_verification_done' => ['sometimes', 'boolean'],
+            'rc_verification_payload' => ['nullable', 'json'],
             // Container
             'container_number' => ['nullable', 'string', 'max:50'],
             'container_type' => ['nullable', 'string', 'max:20'],

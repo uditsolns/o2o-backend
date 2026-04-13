@@ -6,6 +6,7 @@ use App\Enums\SealOrderStatus;
 use App\Enums\WalletCoastingType;
 use App\Jobs\SepioPlaceOrderJob;
 use App\Models\CustomerPort;
+use App\Models\CustomerWallet;
 use App\Models\SealOrder;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -140,7 +141,7 @@ readonly class SealOrderService
         return $order->fresh();
     }
 
-    private function assertPaymentViable(mixed $wallet, string $paymentType, int $quantity, float $unitPrice): void
+    private function assertPaymentViable(CustomerWallet $wallet, string $paymentType, int $quantity, float $unitPrice): void
     {
         if ($paymentType === 'advance_balance') {
             $total = round($quantity * $unitPrice * 1.18, 2);

@@ -33,7 +33,7 @@ readonly class SepioOrderService
 
         // Resolve port strings from customer_ports
         $orderPorts = $customer->ports()
-            ->whereIn('id', json_decode($order->sepio_order_ports ?? '[]', true) ?: [])
+            ->whereIn('code', $order->sepio_order_ports)
             ->get()
             ->map(fn($p) => "{$p->name} ({$p->code})")
             ->values()
@@ -68,7 +68,7 @@ readonly class SepioOrderService
             'purchaseOrderNumber' => null,
             'isSezUser' => 0,
             'sepioURL' => 'sepio/orders',
-            'reqId' => $order->order_ref,
+            // 'reqId' => $order->order_ref,
             'totalRoundOff' => 0,
             'shippingInfo' => [
                 'address' => $shippingLocation->address,

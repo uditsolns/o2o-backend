@@ -12,8 +12,10 @@ class Trip extends Model
     protected $fillable = [
         'customer_id', 'created_by_id', 'seal_id', 'route_id', 'trip_ref',
         'status', 'trip_type', 'transport_mode', 'risk_score',
-        'driver_name', 'driver_license', 'driver_aadhaar', 'driver_phone',
-        'vehicle_number', 'vehicle_type', 'transporter_name', 'transporter_id',
+        'driver_name', 'driver_license', 'driver_aadhaar', 'driver_phone', 'is_driver_license_verified',
+        'is_driver_aadhaar_verified', 'driver_license_verification_payload', 'driver_aadhaar_verification_payload',
+        'vehicle_number', 'vehicle_type', 'transporter_name', 'transporter_id', 'is_rc_verified',
+        'rc_verification_payload', 'is_verification_done',
         'container_number', 'container_type', 'seal_issue_date',
         'cargo_type', 'cargo_description', 'hs_code',
         'gross_weight', 'net_weight', 'weight_unit',
@@ -53,6 +55,13 @@ class Trip extends Model
         'eway_bill_validity_date' => 'date',
         'expected_delivery_date' => 'date',
         'actual_delivery_date' => 'date',
+        'is_driver_license_verified' => 'boolean',
+        'is_driver_aadhaar_verified' => 'boolean',
+        'driver_license_verification_payload' => 'array',
+        'driver_aadhaar_verification_payload' => 'array',
+        'is_rc_verified' => 'boolean',
+        'rc_verification_payload' => 'array',
+        'is_verification_done' => 'boolean',
     ];
 
     protected static function booted(): void

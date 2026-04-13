@@ -13,6 +13,9 @@ class RolePermissionSeeder extends Seeder
         'customer.view', 'customer.create', 'customer.update',
         'customer.approve', 'customer.reject', 'customer.park',
 
+        // Sepio (Access Sepio inspector for debugging)
+        'sepio.inspect',
+
         // users
         'user.view', 'user.create', 'user.update', 'user.delete',
 
