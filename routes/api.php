@@ -114,6 +114,7 @@ Route::prefix('v1')->group(function () {
             // Seal Inventory
             Route::get('seals', [SealController::class, 'index']);
             Route::get('seals/{seal}', [SealController::class, 'show']);
+            Route::get('seals/{seal}/check-availability', [SealController::class, 'checkAvailability']);
             Route::get('seals/{seal}/status-history', [SealController::class, 'statusHistory']);
 
 

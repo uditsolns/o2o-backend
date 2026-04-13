@@ -12,7 +12,7 @@ class SealStatusLog extends Model
     public $timestamps = false;
 
     protected $fillable = [
-        'customer_id', 'seal_id', 'trip_id', 'status',
+        'customer_id', 'seal_id', 'trip_id', 'status', 'checked_at',
         'scan_location', 'scanned_lat', 'scanned_lng', 'scanned_by', 'raw_response',
     ];
 

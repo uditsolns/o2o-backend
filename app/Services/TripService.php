@@ -9,14 +9,16 @@ use App\Models\Port;
 use App\Models\Seal;
 use App\Models\Trip;
 use App\Models\User;
+use App\Services\Sepio\SepioSealService;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 
-class TripService
+readonly class TripService
 {
     public function __construct(
-        private readonly SealService      $sealService,
-        private readonly TripEventService $eventService,
+        private SealService      $sealService,
+        private TripEventService $eventService,
+        private SepioSealService $sepioSealService,
     )
     {
     }
@@ -81,6 +83,10 @@ class TripService
             unset($snapshots['seal_id']); // handled separately
 
             $trip->update($snapshots);
+
+            if ($newStatus === TripStatus::InTransit->value && $trip->seal && $trip->customer->sepio_company_id) {
+                $this->sepioSealService->installSeal($trip->customer, $trip->fresh());
+            }
 
             if ($newStatus && $newStatus !== $previousStatus) {
                 $this->eventService->log(

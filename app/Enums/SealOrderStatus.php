@@ -12,6 +12,7 @@ enum SealOrderStatus: string
     case InProgress = 'in_progress';
     case OrderPlaced = 'order_placed';
     case InTransit = 'in_transit';
+    case MfgCompleted = 'mfg_completed';
     case Completed = 'completed';
     case MfgRejected = 'mfg_rejected';
 

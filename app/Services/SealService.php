@@ -7,10 +7,15 @@ use App\Enums\SealOrderStatus;
 use App\Models\Seal;
 use App\Models\SealOrder;
 use App\Models\SealStatusLog;
+use App\Services\Sepio\SepioSealService;
 use Illuminate\Support\Facades\DB;
 
-class SealService
+readonly class SealService
 {
+    public function __construct(private SepioSealService $sepioSealService)
+    {
+    }
+
     /**
      * Bulk-ingest seal numbers from Sepio after an order is dispatched.
      * Called by webhook or manual admin trigger.
@@ -62,6 +67,17 @@ class SealService
             422,
             "Seal {$seal->seal_number} is not available (current status: {$seal->status->value})."
         );
+
+        $customer = $seal->customer;
+
+        // Check availability with Sepio before assigning
+        if ($customer->sepio_company_id) {
+            $check = $this->sepioSealService->checkSealAvailability($customer, $seal);
+
+            if (!$check['available']) {
+                abort(422, "Seal {$seal->seal_number} is not available on Sepio: {$check['message']}");
+            }
+        }
 
         $seal->update([
             'trip_id' => $tripId,

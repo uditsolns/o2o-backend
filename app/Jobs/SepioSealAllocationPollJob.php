@@ -21,12 +21,16 @@ class SepioSealAllocationPollJob implements ShouldQueue
 
     public function handle(SepioClient $client, SealService $sealService): void
     {
-        // All orders forwarded to Sepio but seals not yet ingested
+        // Watch all orders that Sepio has in flight or has completed on their end.
+        // MfgCompleted is the most likely state to have a seal_range ready,
+        // but allocation can appear as early as InTransit.
         $orders = SealOrder::with('customer')
             ->whereIn('status', [
                 SealOrderStatus::MfgPending,
-                SealOrderStatus::InProgress,
                 SealOrderStatus::OrderPlaced,
+                SealOrderStatus::InProgress,
+                SealOrderStatus::InTransit,
+                SealOrderStatus::MfgCompleted,
             ])
             ->whereNotNull('sepio_order_id')
             ->get();
@@ -104,6 +108,7 @@ class SepioSealAllocationPollJob implements ShouldQueue
 
             Log::info('Seals ingested from Sepio allocation', [
                 'order_id' => $order->id,
+                'from_status' => $order->status->value,
                 'seal_count' => count($sealNumbers),
             ]);
         } catch (\Throwable $e) {

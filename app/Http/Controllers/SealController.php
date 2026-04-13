@@ -8,6 +8,7 @@ use App\Http\Resources\SealStatusLogResource;
 use App\Models\Seal;
 use App\Models\SealOrder;
 use App\Services\SealService;
+use App\Services\Sepio\SepioSealService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -16,7 +17,7 @@ use Spatie\QueryBuilder\QueryBuilder;
 
 class SealController extends Controller
 {
-    public function __construct(private readonly SealService $service)
+    public function __construct(private readonly SealService $service, private readonly SepioSealService $sepioSealService)
     {
     }
 
@@ -50,6 +51,33 @@ class SealController extends Controller
         return response()->json(new SealResource(
             $seal->load('order', 'trip')
         ));
+    }
+
+    public function checkAvailability(Seal $seal): JsonResponse
+    {
+        $this->authorize('view', $seal);
+
+        // Fast local check first — no Sepio call needed if already assigned/used
+        if (!$seal->isAvailable()) {
+            return response()->json([
+                'available' => false,
+                'message' => "Seal is not available (status: {$seal->status->value}).",
+            ]);
+        }
+
+        $customer = $seal->customer;
+
+        // If not yet registered on Sepio, just return local status
+        if (!$customer->sepio_company_id) {
+            return response()->json([
+                'available' => true,
+                'message' => 'Seal is available.',
+            ]);
+        }
+
+        $result = $this->sepioSealService->checkSealAvailability($customer, $seal);
+
+        return response()->json($result);
     }
 
     public function statusHistory(Seal $seal): AnonymousResourceCollection
