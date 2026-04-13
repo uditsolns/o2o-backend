@@ -644,7 +644,7 @@ Validates checklist server-side. Moves status to `submitted`.
 ## 8. Locations
 
 > Client users manage their own. TenantScope auto-filters.  
-> Filters: `filter[location_type]=billing|shipping|both`, `filter[is_active]=true`, `filter[search]=Mumbai`  
+> Filters: `filter[is_active]=true`, `filter[search]=Mumbai`  
 > Sorts: `sort=name`, `sort=city`  
 > Includes: `include=createdBy`
 
@@ -654,7 +654,6 @@ Validates checklist server-side. Moves status to `submitted`.
 
 ```json
 {
-    "location_type": "billing|shipping|both",
     "name": "Mumbai Warehouse",
     "gst_number": "27AABCU...",
     // required when type is billing or both
@@ -686,7 +685,6 @@ Returns 422 if location is used in active routes.
 ```json
 {
     "id": 1,
-    "location_type": "billing",
     "name": "Mumbai Warehouse",
     "gst_number": "27AABCU...",
     "address": "...",
@@ -1448,7 +1446,6 @@ All reports share the same query params:
 | `onboarding_status`   | `pending` `submitted` `il_parked` `il_approved` `il_rejected` `mfg_rejected` `completed`                                                |
 | `company_type`        | `pvt_ltd` `llp` `proprietorship` `partnership` `public_ltd`                                                                             |
 | `user_status`         | `invited` `active` `inactive` `suspended`                                                                                               |
-| `location_type`       | `billing` `shipping` `both`                                                                                                             |
 | `port_category`       | `port` `icd` `cfs`                                                                                                                      |
 | `seal_order_status`   | `il_pending` `il_approved` `il_rejected` `il_parked` `mfg_pending` `in_progress` `order_placed` `in_transit` `completed` `mfg_rejected` |
 | `seal_status`         | `in_inventory` `assigned` `in_transit` `used` `tampered` `lost`                                                                         |

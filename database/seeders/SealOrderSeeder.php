@@ -42,8 +42,8 @@ class SealOrderSeeder extends Seeder
                 continue;
             }
 
-            $billingLoc = $locations->firstWhere(fn($l) => in_array($l->location_type->value, ['billing', 'both']));
-            $shippingLoc = $locations->firstWhere(fn($l) => in_array($l->location_type->value, ['shipping', 'both']));
+            $billingLoc = $locations->first(fn($l) => !empty($l->sepio_billing_address_id));
+            $shippingLoc = $locations->first(fn($l) => !empty($l->sepio_shipping_address_id));
 
             if (!$billingLoc || !$shippingLoc) continue;
 
@@ -134,8 +134,8 @@ class SealOrderSeeder extends Seeder
                 'il_approved_at' => now()->subDays(5),
                 'il_remarks' => 'Approved. Forwarded to Sepio.',
                 'sepio_order_id' => 'SEPIO-ORD-' . $cid . '-003',
-                'sepio_billing_address_id' => $billingLoc->sepio_address_id,
-                'sepio_shipping_address_id' => $shippingLoc->sepio_address_id,
+                'sepio_billing_address_id' => $billingLoc->sepio_billing_address_id,
+                'sepio_shipping_address_id' => $shippingLoc->sepio_shipping_address_id,
             ]),
 
             // Mfg Pending
@@ -147,8 +147,8 @@ class SealOrderSeeder extends Seeder
                 'il_approved_by' => $admin->id,
                 'il_approved_at' => now()->subDays(8),
                 'sepio_order_id' => 'SEPIO-ORD-' . $cid . '-004',
-                'sepio_billing_address_id' => $billingLoc->sepio_address_id,
-                'sepio_shipping_address_id' => $shippingLoc->sepio_address_id,
+                'sepio_billing_address_id' => $billingLoc->sepio_billing_address_id,
+                'sepio_shipping_address_id' => $shippingLoc->sepio_shipping_address_id,
             ]),
 
             // In Transit (seals dispatched from Sepio, not yet ingested)
@@ -160,8 +160,8 @@ class SealOrderSeeder extends Seeder
                 'il_approved_by' => $admin->id,
                 'il_approved_at' => now()->subDays(12),
                 'sepio_order_id' => 'SEPIO-ORD-' . $cid . '-005',
-                'sepio_billing_address_id' => $billingLoc->sepio_address_id,
-                'sepio_shipping_address_id' => $shippingLoc->sepio_address_id,
+                'sepio_billing_address_id' => $billingLoc->sepio_billing_address_id,
+                'sepio_shipping_address_id' => $shippingLoc->sepio_shipping_address_id,
                 'courier_name' => 'Blue Dart',
                 'courier_docket_number' => 'BD' . rand(10000000, 99999999),
                 'seals_dispatched_at' => now()->subDays(7),
@@ -176,8 +176,8 @@ class SealOrderSeeder extends Seeder
                 'il_approved_by' => $admin->id,
                 'il_approved_at' => now()->subDays(20),
                 'sepio_order_id' => 'SEPIO-ORD-' . $cid . '-006',
-                'sepio_billing_address_id' => $billingLoc->sepio_address_id,
-                'sepio_shipping_address_id' => $shippingLoc->sepio_address_id,
+                'sepio_billing_address_id' => $billingLoc->sepio_billing_address_id,
+                'sepio_shipping_address_id' => $shippingLoc->sepio_shipping_address_id,
                 'courier_name' => 'DTDC',
                 'courier_docket_number' => 'DTDC' . rand(10000000, 99999999),
                 'seals_dispatched_at' => now()->subDays(15),

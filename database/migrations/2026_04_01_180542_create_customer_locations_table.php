@@ -31,7 +31,7 @@ return new class extends Migration {
             $table->foreignId('created_by_id')->nullable()->constrained('users')->nullOnDelete();
             $table->timestamps();
 
-            $table->index(['customer_id', 'location_type', 'is_active']);
+            $table->index(['customer_id', 'is_active']);
         });
     }
 

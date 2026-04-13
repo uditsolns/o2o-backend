@@ -59,7 +59,6 @@ class CustomerLocationSeeder extends Seeder
         // Use the customer's billing address as the "both" location so data is consistent
         return [
             [
-                'location_type' => LocationType::Both,
                 'name' => $customer->company_name . ' - HO',
                 'gst_number' => $customer->gst_number,
                 'address' => $customer->billing_address,
@@ -72,10 +71,10 @@ class CustomerLocationSeeder extends Seeder
                 'lat' => fake()->latitude(8, 35),
                 'lng' => fake()->longitude(68, 97),
                 'is_active' => true,
-                'sepio_address_id' => 'ADDR' . $customer->id . '01',
+                'sepio_billing_address_id' => 'ADDRBL' . $customer->id . '03',
+                'sepio_shipping_address_id' => 'ADDRSH' . $customer->id . '03',
             ],
             [
-                'location_type' => LocationType::Shipping,
                 'name' => $customer->company_name . ' - Warehouse',
                 'gst_number' => null,
                 'address' => '45, Industrial Area Phase 2',
@@ -88,10 +87,10 @@ class CustomerLocationSeeder extends Seeder
                 'lat' => fake()->latitude(8, 35),
                 'lng' => fake()->longitude(68, 97),
                 'is_active' => true,
-                'sepio_address_id' => 'ADDR' . $customer->id . '02',
+                'sepio_billing_address_id' => 'ADDRBL' . $customer->id . '03',
+                'sepio_shipping_address_id' => 'ADDRSH' . $customer->id . '03',
             ],
             [
-                'location_type' => LocationType::Billing,
                 'name' => $customer->company_name . ' - Branch Office',
                 'gst_number' => $customer->gst_number,
                 'address' => '301, Trade Tower, MG Road',
@@ -104,7 +103,8 @@ class CustomerLocationSeeder extends Seeder
                 'lat' => 18.5204,
                 'lng' => 73.8567,
                 'is_active' => true,
-                'sepio_address_id' => 'ADDR' . $customer->id . '03',
+                'sepio_billing_address_id' => 'ADDRBL' . $customer->id . '03',
+                'sepio_shipping_address_id' => 'ADDRSH' . $customer->id . '03',
             ],
         ];
     }

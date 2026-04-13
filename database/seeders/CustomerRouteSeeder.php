@@ -40,8 +40,8 @@ class CustomerRouteSeeder extends Seeder
             $user = User::where('customer_id', $customer->id)->firstOrFail();
             $locations = CustomerLocation::where('customer_id', $customer->id)->get();
 
-            $dispatchLoc = $locations->firstWhere(fn($l) => in_array($l->location_type->value, ['both', 'shipping']));
-            $deliveryLoc = $locations->firstWhere(fn($l) => in_array($l->location_type->value, ['both', 'billing']));
+            $dispatchLoc = $locations->first(fn($l) => !empty($l->sepio_shipping_address_id));
+            $deliveryLoc = $locations->first(fn($l) => !empty($l->sepio_billing_address_id));
             $originPort = $seaPorts->shuffle()->first();
             $destPort = $icdPorts->shuffle()->first();
 
