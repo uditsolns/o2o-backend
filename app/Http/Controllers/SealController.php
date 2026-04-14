@@ -70,8 +70,8 @@ class SealController extends Controller
         // If not yet registered on Sepio, just return local status
         if (!$customer->sepio_company_id) {
             return response()->json([
-                'available' => true,
-                'message' => 'Seal is available.',
+                'available' => false,
+                'message' => 'Seal is available due to sepio access unavailability.',
             ]);
         }
 

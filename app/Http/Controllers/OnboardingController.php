@@ -12,6 +12,7 @@ use App\Http\Resources\AuthorizedSignatoryResource;
 use App\Http\Resources\CustomerDocumentResource;
 use App\Http\Resources\CustomerResource;
 use App\Models\AuthorizedSignatory;
+use App\Models\Customer;
 use App\Models\CustomerDocument;
 use App\Services\OnboardingService;
 use Illuminate\Http\JsonResponse;
@@ -29,11 +30,9 @@ class OnboardingController extends Controller
      */
     public function status(Request $request): JsonResponse
     {
-        abort_if($request->user()->isPlatformUser(), 400, 'This action is unauthorized.');
+        $customer = $this->resolveCustomer($request);
 
-        $customer = $request->user()->customer->load(
-            'signatories', 'documents', 'ports'
-        );
+        $customer->load('signatories', 'documents', 'ports');
 
         $uploadedDocTypes = $customer->documents
             ->map(fn($d) => is_string($d->doc_type) ? $d->doc_type : $d->doc_type->value)
@@ -60,10 +59,8 @@ class OnboardingController extends Controller
     {
         $this->denyIfSubmitted($request);
 
-        $customer = $this->service->saveProfile(
-            $request->user()->customer,
-            $request->validated()
-        );
+        $customer = $this->resolveCustomer($request);
+        $customer = $this->service->saveProfile($customer, $request->validated());
 
         return response()->json(new CustomerResource($customer));
     }
@@ -72,11 +69,13 @@ class OnboardingController extends Controller
     {
         $this->denyIfSubmitted($request);
 
+        $customer = $this->resolveCustomer($request);
+
         $data = $request->safe()->except('id_proof');
 
         if ($request->hasFile('id_proof')) {
             $path = $request->file('id_proof')->store(
-                "customers/{$request->user()->customer_id}/signatories",
+                "customers/{$customer->id}/signatories",
             );
             $data['id_proof_url'] = $path;
         }
@@ -97,11 +96,9 @@ class OnboardingController extends Controller
         $data = $request->safe()->except('id_proof');
 
         if ($request->hasFile('id_proof')) {
-            if ($signatory->id_proof_url) {
-                Storage::delete($signatory->id_proof_url);
-            }
+            if ($signatory->id_proof_url) Storage::delete($signatory->id_proof_url);
             $data['id_proof_url'] = $request->file('id_proof')->store(
-                "customers/{$request->user()->customer_id}/signatories",
+                "customers/{$signatory->customer_id}/signatories",
             );
         }
 
@@ -123,9 +120,10 @@ class OnboardingController extends Controller
     public function uploadDocument(UploadDocumentRequest $request): JsonResponse
     {
         $this->denyIfSubmitted($request);
+        $customer = $this->resolveCustomer($request);
 
         $document = $this->service->uploadDocument(
-            $request->user()->customer,
+            $customer,
             $request->safe()->except('file'),
             $request->file('file'),
             $request->user()
@@ -138,9 +136,7 @@ class OnboardingController extends Controller
     {
         $this->denyIfSubmitted($request);
 
-        if ($document->customer_id !== $request->user()->customer_id) {
-            abort(403);
-        }
+        $this->authorizeDocument($request, $document);
 
         $this->service->deleteDocument($document);
 
@@ -151,10 +147,9 @@ class OnboardingController extends Controller
     {
         $this->denyIfSubmitted($request);
 
-        $this->service->savePorts(
-            $request->user()->customer,
-            $request->validated('port_ids')
-        );
+        $customer = $this->resolveCustomer($request);
+
+        $this->service->savePorts($customer, $request->validated('port_ids'));
 
         return response()->json(['message' => 'Ports saved.']);
     }
@@ -163,7 +158,9 @@ class OnboardingController extends Controller
     {
         $this->denyIfSubmitted($request);
 
-        $customer = $this->service->submit($request->user()->customer);
+        $customer = $this->resolveCustomer($request);
+        
+        $customer = $this->service->submit($customer);
 
         return response()->json([
             'message' => 'Onboarding submitted successfully.',
@@ -175,7 +172,12 @@ class OnboardingController extends Controller
 
     private function denyIfSubmitted(Request $request): void
     {
-        $status = $request->user()->customer?->onboarding_status;
+        $user = $request->user();
+
+        // Platform users can always modify on behalf of customers
+        if ($user->isPlatformUser()) return;
+
+        $status = $user->customer?->onboarding_status;
 
         $locked = [
             CustomerOnboardingStatus::Submitted,
@@ -190,9 +192,20 @@ class OnboardingController extends Controller
 
     private function authorizeSignatory(Request $request, AuthorizedSignatory $signatory): void
     {
-        if ($signatory->customer_id !== $request->user()->customer_id) {
-            abort(403);
-        }
+        $user = $request->user();
+
+        if ($user->isPlatformUser()) return;
+
+        if ($signatory->customer_id !== $user->customer_id) abort(403);
+    }
+
+    private function authorizeDocument(Request $request, CustomerDocument $document): void
+    {
+        $user = $request->user();
+
+        if ($user->isPlatformUser()) return;
+
+        if ($document->customer_id !== $user->customer_id) abort(403);
     }
 
     private function isProfileComplete(mixed $customer): bool
@@ -232,5 +245,18 @@ class OnboardingController extends Controller
             && $customer->signatories->isNotEmpty()
             && $customer->ports->isNotEmpty()
             && $hasRequiredDocs;
+    }
+
+    private function resolveCustomer(Request $request): Customer
+    {
+        $user = $request->user();
+
+        if ($user->isPlatformUser()) {
+            $customerId = $request->input('customer_id');
+            abort_if(!$customerId, 400, 'customer_id is required for platform users.');
+            return Customer::findOrFail($customerId);
+        }
+
+        return $user->customer;
     }
 }

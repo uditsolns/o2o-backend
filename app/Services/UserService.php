@@ -34,7 +34,7 @@ class UserService
     {
         $user = User::create([
             'role_id' => $data['role_id'],
-            'customer_id' => $data['customer_id'],
+            'customer_id' => $data['customer_id'] ?? $user->customer_id ?? null,
             'name' => $data['name'],
             'email' => $data['email'],
             'mobile' => $data['mobile'] ?? null,

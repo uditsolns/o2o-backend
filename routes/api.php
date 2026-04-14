@@ -74,7 +74,7 @@ Route::prefix('v1')->group(function () {
         Route::post('pricing/calculate', [SealPricingController::class, 'calculate']); // client previews cost
 
 
-        // ── Onboarding (client_admin only — checked in controller) ────────────
+        // ── Onboarding
         Route::prefix('onboarding')->group(function () {
             Route::get('status', [OnboardingController::class, 'status']);
             Route::post('profile', [OnboardingController::class, 'saveProfile']);

@@ -8,6 +8,7 @@ use App\Models\SealPricingTier;
 use App\Services\WalletService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class SealPricingController extends Controller
 {
@@ -24,7 +25,7 @@ class SealPricingController extends Controller
             ? $request->user()->customer_id
             : $request->route('customer');
 
-        abort_if(!$customerId, 400, 'Customer context required.');
+        abort_if(!$customerId, 400, 'customer_id is required for platform users.');
 
         $tiers = SealPricingTier::where('customer_id', $customerId)
             ->where('is_active', true)
@@ -56,10 +57,20 @@ class SealPricingController extends Controller
      */
     public function calculate(Request $request): JsonResponse
     {
-        $request->validate(['quantity' => ['required', 'integer', 'min:20']]);
+        $user = $request->user();
 
-        $customer = $request->user()->customer;
-        abort_if(is_null($customer), 400, 'This action is unauthorized.');
+        $request->validate([
+            'customer_id' => ['required', Rule::requiredIf($user->isPlatformUser()), 'exists:customers,id'],
+            'quantity' => ['required', 'integer', 'min:20']
+        ]);
+
+        if ($user->isPlatformUser()) {
+            $customerId = $data['customer_id'] ?? null;
+            abort_if(!$customerId, 400, 'customer_id is required for platform users.');
+            $customer = Customer::findOrFail($customerId);
+        } else {
+            $customer = $user->customer;
+        }
 
         $wallet = $customer->wallet;
         abort_if(!$wallet, 422, 'Wallet not configured.');

@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Jobs\SepioSyncLocationJob;
+use App\Models\Customer;
 use App\Models\CustomerLocation;
 use App\Models\User;
 
@@ -10,21 +11,23 @@ class LocationService
 {
     public function store(array $data, User $createdBy): CustomerLocation
     {
-        $customerId = $createdBy->isClientUser()
-            ? $createdBy->customer_id
-            : null;
-
-        abort_if(!$customerId, 400, 'Customer context required.');
+        if ($createdBy->isPlatformUser()) {
+            $customerId = $data['customer_id'] ?? null;
+            abort_if(!$customerId, 400, 'customer_id is required for platform users.');
+        } else {
+            $customerId = $createdBy->customer_id;
+            abort_if(!$customerId, 400, 'Customer context required.');
+        }
 
         $location = CustomerLocation::create([
             ...$data,
-            'customer_id' => $createdBy->customer_id,
+            'customer_id' => $customerId,
             'created_by_id' => $createdBy->id,
         ]);
 
-        $customer = $createdBy->customer;
+        $customer = Customer::find($customerId);
 
-        if ($customer->sepio_company_id) {
+        if ($customer?->sepio_company_id) {
             SepioSyncLocationJob::dispatch($customer, $location);
         }
 

@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\SealOrderStatus;
 use App\Enums\WalletCoastingType;
 use App\Jobs\SepioPlaceOrderJob;
+use App\Models\Customer;
 use App\Models\CustomerPort;
 use App\Models\CustomerWallet;
 use App\Models\SealOrder;
@@ -19,7 +20,14 @@ readonly class SealOrderService
 
     public function store(array $data, User $orderedBy): SealOrder
     {
-        $customer = $orderedBy->customer;
+        if ($orderedBy->isPlatformUser()) {
+            $customerId = $data['customer_id'] ?? null;
+            abort_if(!$customerId, 400, 'customer_id is required for platform users.');
+            $customer = Customer::findOrFail($customerId);
+        } else {
+            $customer = $orderedBy->customer;
+        }
+        
         $wallet = $customer->wallet;
 
         abort_if(!$wallet, 422, 'Customer wallet has not been configured yet.');

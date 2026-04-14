@@ -77,6 +77,8 @@ class CustomerPortController extends Controller
 
     private function authorizeOwnership(CustomerPort $customerPort, $user): void
     {
+        if ($user->isPlatformUser()) return;
+
         if ($customerPort->customer_id !== $user->customer_id) {
             abort(403);
         }

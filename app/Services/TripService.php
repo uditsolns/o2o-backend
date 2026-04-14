@@ -34,10 +34,16 @@ readonly class TripService
 
     public function store(array $data, User $createdBy): Trip
     {
-        return DB::transaction(function () use ($data, $createdBy) {
+        $customerId = $createdBy->isPlatformUser()
+            ? ($data['customer_id'] ?? null)
+            : $createdBy->customer_id;
+
+        abort_if(!$customerId, 400, 'customer_id is required for platform users.');
+
+        return DB::transaction(function () use ($data, $createdBy, $customerId) {
             $trip = Trip::create([
                 ...$this->resolveSnapshots($data, $createdBy->customer_id),
-                'customer_id' => $createdBy->customer_id,
+                'customer_id' => $customerId,
                 'created_by_id' => $createdBy->id,
                 'trip_ref' => $this->generateTripRef(),
                 'status' => TripStatus::Draft,

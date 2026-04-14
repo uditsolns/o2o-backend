@@ -10,17 +10,22 @@ class CustomerPortService
 {
     public function store(array $data, User $createdBy): CustomerPort
     {
+        $customerId = $createdBy->isPlatformUser()
+            ? ($data['customer_id'] ?? null)
+            : $createdBy->customer_id;
+
+        abort_if(!$customerId, 400, 'customer_id is required for platform users.');
+
         $port = Port::where('id', $data['port_id'])
             ->where('is_active', true)
             ->firstOrFail();
 
         return CustomerPort::create([
-            'customer_id' => $createdBy->customer_id,
+            'customer_id' => $customerId,
             'port_id' => $port->id,
             'port_category' => $port->port_category->value,
             'name' => $port->name,
             'code' => $port->code,
-            // use custom values if provided, else copy from master
             'lat' => $data['lat'] ?? $port->lat,
             'lng' => $data['lng'] ?? $port->lng,
             'geo_fence_radius' => $data['geo_fence_radius'] ?? $port->geo_fence_radius,

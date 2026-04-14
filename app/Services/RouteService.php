@@ -10,18 +10,28 @@ class RouteService
 {
     public function store(array $data, User $createdBy): CustomerRoute
     {
-        $this->assertLocationsOwnedBy($data, $createdBy->customer_id);
+        $customerId = $createdBy->isPlatformUser()
+            ? ($data['customer_id'] ?? null)
+            : $createdBy->customer_id;
+
+        abort_if(!$customerId, 400, 'customer_id is required for platform users.');
+
+        $this->assertLocationsOwnedBy($data, $customerId);
 
         return CustomerRoute::create([
             ...$data,
-            'customer_id' => $createdBy->customer_id,
+            'customer_id' => $customerId,
             'created_by_id' => $createdBy->id,
         ]);
     }
 
     public function update(CustomerRoute $route, array $data, User $updatedBy): CustomerRoute
     {
-        $this->assertLocationsOwnedBy($data, $updatedBy->customer_id);
+        $customerId = $updatedBy->isPlatformUser()
+            ? $route->customer_id
+            : $updatedBy->customer_id;
+
+        $this->assertLocationsOwnedBy($data, $customerId);
 
         $route->update($data);
         return $route->fresh();

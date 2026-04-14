@@ -14,9 +14,11 @@ class CustomerPolicy
     public function view(User $user, Customer $customer): bool
     {
         if (!$user->hasPermission('customer.view')) return false;
+
+        if ($user->isPlatformUser()) return true;
+
         // Client users can only see their own company
-        if ($user->isClientUser()) return $user->customer_id === $customer->id;
-        return true;
+        return $user->customer_id === $customer->id;
     }
 
     public function create(User $user): bool
@@ -27,8 +29,10 @@ class CustomerPolicy
     public function update(User $user, Customer $customer): bool
     {
         if (!$user->hasPermission('customer.update')) return false;
-        if ($user->isClientUser()) return $user->customer_id === $customer->id;
-        return true;
+
+        if ($user->isPlatformUser()) return true;
+
+        return $user->customer_id === $customer->id;
     }
 
     public function approve(User $user, Customer $customer): bool

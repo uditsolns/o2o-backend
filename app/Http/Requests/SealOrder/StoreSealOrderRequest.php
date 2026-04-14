@@ -3,6 +3,7 @@
 namespace App\Http\Requests\SealOrder;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class StoreSealOrderRequest extends FormRequest
 {
@@ -14,6 +15,7 @@ class StoreSealOrderRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'customer_id' => ['required', Rule::requiredIf($this->user()->isPlatformUser()), 'integer', 'exists:customers,id'],
             'quantity' => ['required', 'integer', 'min:20'],
             'payment_type' => ['required', 'in:cash,credit,advance_balance'],
             'billing_location_id' => ['required', 'integer', 'exists:customer_locations,id'],

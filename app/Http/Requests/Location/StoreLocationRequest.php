@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Location;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class StoreLocationRequest extends FormRequest
 {
@@ -14,6 +15,7 @@ class StoreLocationRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'customer_id' => ['nullable', Rule::requiredIf($this->user()->isPlatformUser()), 'integer', 'exists:customers,id'],
             'name' => ['required', 'string', 'max:255'],
             'gst_number' => ['required', 'string', 'max:20'],
             'address' => ['nullable', 'string'],

@@ -17,6 +17,7 @@ class StoreTripRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'customer_id' => ['required', Rule::requiredIf($this->user()->isPlatformUser()), 'integer', 'exists:customers,id'],
             'route_id' => ['nullable', 'integer', 'exists:customer_routes,id'],
             'trip_type' => ['required', Rule::enum(TripType::class)],
             'transport_mode' => ['required', Rule::enum(TripTransportationMode::class)],
