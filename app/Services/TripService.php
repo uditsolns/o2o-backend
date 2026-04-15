@@ -42,7 +42,7 @@ readonly class TripService
 
         return DB::transaction(function () use ($data, $createdBy, $customerId) {
             $trip = Trip::create([
-                ...$this->resolveSnapshots($data, $createdBy->customer_id),
+                ...$this->resolveSnapshots($data, $customerId),
                 'customer_id' => $customerId,
                 'created_by_id' => $createdBy->id,
                 'trip_ref' => $this->generateTripRef(),
@@ -86,7 +86,7 @@ readonly class TripService
 
             // Remove location/port IDs — they're resolved to snapshots
             $snapshots = $this->resolveSnapshots($data, $trip->customer_id);
-            unset($snapshots['seal_id']); // handled separately
+            // unset($snapshots['seal_id']); // handled separately
 
             $trip->update($snapshots);
 

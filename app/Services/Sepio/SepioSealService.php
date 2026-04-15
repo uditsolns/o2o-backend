@@ -84,7 +84,7 @@ readonly class SepioSealService
             ? "{$trip->origin_port_name} ({$trip->origin_port_code})"
             : null;
 
-        $sealingDate = $trip->seal_issue_date?->format('Y-m-d')
+        $sealingDate = $seal->created_at->format('Y-m-d')
             ?? $trip->dispatch_date?->format('Y-m-d')
             ?? now()->format('Y-m-d');
 
