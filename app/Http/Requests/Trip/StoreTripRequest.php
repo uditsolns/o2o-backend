@@ -55,7 +55,7 @@ class StoreTripRequest extends FormRequest
             'declared_cargo_value' => ['nullable', 'numeric', 'min:0'],
             'invoice_number' => ['nullable', 'string', 'max:100'],
             'invoice_date' => ['nullable', 'date'],
-            'eway_bill_number' => ['nullable', 'string', 'max:50'],
+            'eway_bill_number' => ['nullable', 'string', 'regex:/^\d{7,15}$/', 'max:20'],
             'eway_bill_validity_date' => ['nullable', 'date'],
             // Dispatch location
             'dispatch_location_id' => ['nullable', 'integer', 'exists:customer_locations,id'],
@@ -68,6 +68,13 @@ class StoreTripRequest extends FormRequest
             // Timeline
             'dispatch_date' => ['nullable', 'date'],
             'expected_delivery_date' => ['nullable', 'date', 'after_or_equal:dispatch_date'],
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'eway_bill_number.regex' => 'Shipping bill number must be numeric digits only (7–15 digits).',
         ];
     }
 }

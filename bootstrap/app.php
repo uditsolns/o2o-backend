@@ -1,5 +1,6 @@
 <?php
 
+use App\Exceptions\SepioException;
 use App\Http\Middleware\BindTenantScope;
 use App\Http\Middleware\EnsureOnboarded;
 use Illuminate\Foundation\Application;
@@ -48,6 +49,12 @@ return Application::configure(basePath: dirname(__DIR__))
                 return response()->json([
                     'message' => $e->getMessage() ?: 'This action is unauthorized.',
                 ], 403);
+            }
+
+            if ($e instanceof SepioException) {
+                return response()->json([
+                    'message' => $e->getMessage(),
+                ], $e->getHttpStatus());
             }
 
             if ($e instanceof HttpException) {

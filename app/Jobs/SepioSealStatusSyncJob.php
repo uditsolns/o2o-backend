@@ -35,9 +35,16 @@ class SepioSealStatusSyncJob implements ShouldQueue
         // Group by customer to reuse token
         $seals->groupBy('customer_id')->each(function ($customerSeals) use ($client, $sealService) {
             $customer = $customerSeals->first()->customer;
-
             foreach ($customerSeals as $seal) {
-                $this->syncSeal($client, $sealService, $customer, $seal);
+                try {
+                    $this->syncSeal($client, $sealService, $customer, $seal);
+                } catch (\Throwable $e) {
+                    Log::error('SepioSealStatusSyncJob: seal sync failed', [
+                        'seal_id' => $seal->id,
+                        'seal_number' => $seal->seal_number,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
             }
         });
     }
@@ -62,8 +69,7 @@ class SepioSealStatusSyncJob implements ShouldQueue
         if ($response->failed()) {
             Log::warning('Sepio seal scan history pull failed', [
                 'seal_id' => $seal->id,
-                'seal_number' => $seal->seal_number,
-                'response' => $response->json(),
+                'error' => $client->parseError($response, 'Scan history pull failed.'),
             ]);
             return;
         }

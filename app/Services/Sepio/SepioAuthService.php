@@ -2,6 +2,7 @@
 
 namespace App\Services\Sepio;
 
+use App\Exceptions\SepioException;
 use App\Models\Customer;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -33,11 +34,11 @@ readonly class SepioAuthService
     {
         $credentials = $customer->sepio_credentials;
 
-        abort_if(
-            !$credentials,
-            500,
-            "Sepio credentials not found for customer #{$customer->id}"
-        );
+        if (!$credentials) {
+            throw new SepioException(
+                "Sepio credentials not found for customer #{$customer->id}", null, 500
+            );
+        }
 
         $response = Http::baseUrl(config('sepio.base_url'))
             ->post('/users/login', [
@@ -50,7 +51,7 @@ readonly class SepioAuthService
                 'customer_id' => $customer->id,
                 'response' => $response->json(),
             ]);
-            abort(502, 'Sepio authentication failed.');
+            throw new SepioException('Authentication failed with seal provider. Check credentials.', $response->json(), 502);
         }
 
         $token = $response->json('token');

@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\SealStatus;
 use App\Enums\TripStatus;
+use App\Exceptions\SepioException;
 use App\Models\CustomerLocation;
 use App\Models\Port;
 use App\Models\Seal;
@@ -49,6 +50,13 @@ readonly class TripService
                 'status' => TripStatus::Draft,
             ]);
 
+            $this->eventService->log(
+                $trip, 'trip_created',
+                ['trip_ref' => $trip->trip_ref],
+                newStatus: TripStatus   ::Draft->value,
+                actorId: $createdBy->id
+            );
+
             // Assign seal if provided
             if (!empty($data['seal_id'])) {
                 $seal = Seal::findOrFail($data['seal_id']);
@@ -61,13 +69,6 @@ readonly class TripService
                     actorId: $createdBy->id
                 );
             }
-
-            $this->eventService->log(
-                $trip, 'trip_created',
-                ['trip_ref' => $trip->trip_ref],
-                newStatus: TripStatus::Draft->value,
-                actorId: $createdBy->id
-            );
 
             return $trip->fresh();
         });
@@ -91,7 +92,13 @@ readonly class TripService
             $trip->update($snapshots);
 
             if ($newStatus === TripStatus::InTransit->value && $trip->seal && $trip->customer->sepio_company_id) {
-                $this->sepioSealService->installSeal($trip->customer, $trip->fresh());
+                try {
+                    $this->sepioSealService->installSeal($trip->customer, $trip->fresh());
+                } catch (SepioException $e) {
+                    // Roll back the status change — seal installation is required before in-transit
+                    $trip->update(['status' => $previousStatus]);
+                    throw $e; // re-throw so controller returns proper 422
+                }
             }
 
             if ($newStatus && $newStatus !== $previousStatus) {

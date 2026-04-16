@@ -3,6 +3,7 @@
 namespace App\Services\Sepio;
 
 use App\Enums\CustomerDocType;
+use App\Exceptions\SepioException;
 use App\Models\Customer;
 use App\Models\CustomerDocument;
 use App\Models\CustomerLocation;
@@ -23,7 +24,22 @@ readonly class SepioOnboardingService
         $icds = $customer->ports()->where('port_category', 'icd')->get();
         $cfsItems = $customer->ports()->where('port_category', 'cfs')->get();
 
+        if ($ports->isEmpty()) {
+            throw new SepioException(
+                'Cannot register with seal provider: customer has no ports assigned. Please add at least one port in onboarding.',
+                null, 422
+            );
+        }
+
+        if ($icds->isEmpty()) {
+            throw new SepioException(
+                'Cannot register with seal provider: customer has no ICD port assigned. Please add at least one ICD port in onboarding.',
+                null, 422
+            );
+        }
+
         $plainPassword = Str::random(16);
+
 
         $response = $this->client->post('/registrationModule/registercompany', [
             'companydetailsInfo' => [
@@ -51,9 +67,20 @@ readonly class SepioOnboardingService
         ]);
 
         if ($response->failed() || empty($response->json('company_id'))) {
-            throw new \RuntimeException(
-                'Sepio registerCompany failed: ' . ($response->json('message') ?? $response->body())
-            );
+            $json = $response->json() ?? [];
+            $msg = SepioException::extractMessage($json);
+
+            // "user already exists" and "IEC already used" mean we're retrying a previously
+            // registered company — treat as idempotent only if we already have sepio_company_id
+            $isAlreadyExists = str_contains(strtolower($msg), 'already exists')
+                || str_contains(strtolower($msg), 'already used');
+
+            if ($isAlreadyExists && $customer->sepio_company_id) {
+                Log::info('Sepio registerCompany skipped — already registered', ['customer_id' => $customer->id]);
+                return $customer->sepio_company_id;
+            }
+
+            throw SepioException::fromResponse($json, 'Sepio company registration failed: ' . $msg);
         }
 
         $sepioCompanyId = (string)$response->json('company_id');
@@ -77,10 +104,16 @@ readonly class SepioOnboardingService
     // Sync all locations
     public function syncAllLocations(Customer $customer): void
     {
-        $locations = $customer->locations()->where('is_active', true)->get();
-
-        foreach ($locations as $location) {
-            $this->syncLocation($customer, $location);
+        foreach ($customer->locations()->where('is_active', true)->get() as $location) {
+            try {
+                $this->syncLocation($customer, $location);
+            } catch (\Throwable $e) {
+                Log::error('Sepio syncLocation failed for location', [
+                    'customer_id' => $customer->id,
+                    'location_id' => $location->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
     }
 
@@ -136,7 +169,15 @@ readonly class SepioOnboardingService
     public function uploadAllDocuments(Customer $customer): void
     {
         foreach ($customer->documents as $document) {
-            $this->uploadDocument($customer, $document);
+            try {
+                $this->uploadDocument($customer, $document);
+            } catch (\Throwable $e) {
+                Log::error('Sepio uploadDocument failed', [
+                    'customer_id' => $customer->id,
+                    'doc_id' => $document->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
     }
 
@@ -178,20 +219,24 @@ readonly class SepioOnboardingService
                 'warehouseFlag' => 0,
             ];
 
+        $baseName = preg_replace('/[.\s]+/', '_', pathinfo($document->file_name, PATHINFO_FILENAME));
+        $safeFileName = $baseName . '.' . $extension;
+
         $response = $this->client->postFileAs(
             $customer,
             $mapping['endpoint'],
             $payload,
             $fileContents,
-            $document->file_name
+            $safeFileName
         );
 
         if ($response->failed()) {
+            $msg = $this->client->parseError($response, 'KYC upload failed.');
             Log::error('Sepio KYC upload failed', [
                 'customer_id' => $customer->id,
                 'doc_id' => $document->id,
-                'doc_type' => $docType,
-                'response' => $response->json(),
+                'doc_type' => is_string($docType) ? $docType : $docType->value,
+                'error' => $msg,
             ]);
             return;
         }

@@ -116,6 +116,7 @@ return new class extends Migration {
             $table->timestamps();
 
             $table->index(['customer_id', 'status']);
+            $table->index(['customer_id', 'container_number'], 'trips_customer_container_idx');
             $table->index('container_number');
             $table->index('dispatch_date');
         });

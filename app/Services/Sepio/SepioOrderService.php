@@ -3,6 +3,7 @@
 namespace App\Services\Sepio;
 
 use App\Enums\SealOrderStatus;
+use App\Exceptions\SepioException;
 use App\Models\SealOrder;
 use Illuminate\Support\Facades\Log;
 
@@ -89,13 +90,10 @@ readonly class SepioOrderService
         ]);
 
         if ($response->failed() || empty($response->json('orderId'))) {
-            Log::error('Sepio placeOrder failed', [
-                'order_id' => $order->id,
-                'response' => $response->json(),
-            ]);
-            throw new \RuntimeException(
-                'Sepio place order failed: ' . ($response->json('message') ?? $response->body())
-            );
+            $json = $response->json() ?? [];
+            $msg = SepioException::extractMessage($json) ?: 'Sepio place order failed.';
+            Log::error('Sepio placeOrder failed', ['order_id' => $order->id, 'error' => $msg]);
+            throw SepioException::fromResponse($json, $msg);
         }
 
         $sepioOrderId = $response->json('orderId');

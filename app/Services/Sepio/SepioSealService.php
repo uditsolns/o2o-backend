@@ -3,6 +3,7 @@
 namespace App\Services\Sepio;
 
 use App\Enums\SealStatus;
+use App\Exceptions\SepioException;
 use App\Models\Customer;
 use App\Models\Seal;
 use App\Models\Trip;
@@ -114,12 +115,15 @@ readonly class SepioSealService
         ]);
 
         if ($response->failed()) {
+            $json = $response->json() ?? [];
+            $msg = SepioException::extractMessage($json) ?: 'Seal installation failed.';
             Log::error('Sepio installSeal failed', [
                 'trip_id' => $trip->id,
                 'seal_number' => $seal->seal_number,
-                'response' => $response->json(),
+                'error' => $msg,
             ]);
-            return false;
+            // Expose the Sepio error to the caller so the trip update can surface it
+            throw new SepioException($msg, $json);
         }
 
         $seal->update(['status' => SealStatus::InTransit]);

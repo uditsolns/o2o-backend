@@ -40,9 +40,15 @@ class SepioSealAllocationPollJob implements ShouldQueue
         // Group by customer to minimise token fetches
         $orders->groupBy('customer_id')->each(function ($customerOrders) use ($client, $sealService) {
             $customer = $customerOrders->first()->customer;
-
-            $this->pollForCustomer($client, $sealService, $customer, $customerOrders);
+            try {
+                $this->pollForCustomer($client, $sealService, $customer, $customerOrders);
+            } catch (\Throwable $e) {
+                Log::error('SepioSealAllocationPollJob: customer poll failed', [
+                    'customer_id' => $customer->id, 'error' => $e->getMessage(),
+                ]);
+            }
         });
+
     }
 
     private function pollForCustomer(
@@ -75,11 +81,15 @@ class SepioSealAllocationPollJob implements ShouldQueue
         $allocationMap = collect($allocations)->keyBy('orderId');
 
         foreach ($orders as $order) {
-            $allocation = $allocationMap[$order->sepio_order_id] ?? null;
-
-            if (!$allocation) continue;
-
-            $this->ingestAllocation($sealService, $order, $allocation);
+            try {
+                $allocation = $allocationMap[$order->sepio_order_id] ?? null;
+                if (!$allocation) continue;
+                $this->ingestAllocation($sealService, $order, $allocation);
+            } catch (\Throwable $e) {
+                Log::error('SepioSealAllocationPollJob: order ingest failed', [
+                    'order_id' => $order->id, 'error' => $e->getMessage(),
+                ]);
+            }
         }
     }
 

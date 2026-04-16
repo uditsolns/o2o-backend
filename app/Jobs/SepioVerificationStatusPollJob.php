@@ -35,7 +35,14 @@ class SepioVerificationStatusPollJob implements ShouldQueue
 
         // Sepio allows max 100 per request — chunk accordingly
         $customers->chunk(100)->each(function ($chunk) use ($client) {
-            $this->pollChunk($client, $chunk);
+            try {
+                $this->pollChunk($client, $chunk);
+            } catch (\Throwable $e) {
+                Log::error('SepioVerificationStatusPollJob: chunk failed', [
+                    'company_ids' => $chunk->pluck('sepio_company_id')->all(),
+                    'error' => $e->getMessage(),
+                ]);
+            }
         });
     }
 
@@ -47,7 +54,8 @@ class SepioVerificationStatusPollJob implements ShouldQueue
         ]);
 
         if ($response->failed()) {
-            Log::error('Sepio verification poll failed', ['response' => $response->json()]);
+            $msg = $client->parseError($response, 'Verification poll failed.');
+            Log::error('Sepio verification poll failed', ['error' => $msg]);
             return;
         }
 
@@ -58,13 +66,17 @@ class SepioVerificationStatusPollJob implements ShouldQueue
             $customer = $map[$result['companyId']] ?? null;
             if (!$customer) continue;
 
-            Log::debug("Result", $result);
-
-            match ($result['verificationStatus']) {
-                'VERIFIED' => $this->markCompleted($customer),
-                'REJECTED' => $this->markRejected($customer, $result),
-                default => null, // PENDING — no action
-            };
+            try {
+                match ($result['verificationStatus']) {
+                    'VERIFIED' => $this->markCompleted($customer),
+                    'REJECTED' => $this->markRejected($customer, $result),
+                    default => null,
+                };
+            } catch (\Throwable $e) {
+                Log::error('SepioVerificationStatusPollJob: result processing failed', [
+                    'customer_id' => $customer->id, 'error' => $e->getMessage(),
+                ]);
+            }
         }
     }
 

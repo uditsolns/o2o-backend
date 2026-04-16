@@ -50,7 +50,13 @@ class SepioOrderStatusSyncJob implements ShouldQueue
 
         $orders->groupBy('customer_id')->each(function (Collection $customerOrders) use ($client) {
             $customer = $customerOrders->first()->customer;
-            $this->syncForCustomer($client, $customer, $customerOrders);
+            try {
+                $this->syncForCustomer($client, $customer, $customerOrders);
+            } catch (\Throwable $e) {
+                Log::error('SepioOrderStatusSyncJob: customer sync failed', [
+                    'customer_id' => $customer->id, 'error' => $e->getMessage(),
+                ]);
+            }
         });
     }
 
@@ -74,16 +80,18 @@ class SepioOrderStatusSyncJob implements ShouldQueue
         }
 
         foreach ($orders as $order) {
-            $sepioOrder = $sepioMap[(string)$order->sepio_order_id] ?? null;
-
-            // Fallback for orders not on page 0 (older / high-volume customers)
-            if (!$sepioOrder) {
-                $sepioOrder = $this->fetchSingleOrder($client, $customer, $order->sepio_order_id);
+            try {
+                $sepioOrder = $sepioMap[(string)$order->sepio_order_id] ?? null;
+                if (!$sepioOrder) {
+                    $sepioOrder = $this->fetchSingleOrder($client, $customer, $order->sepio_order_id);
+                }
+                if (!$sepioOrder) continue;
+                $this->applyStatus($order, $sepioOrder);
+            } catch (\Throwable $e) {
+                Log::error('SepioOrderStatusSyncJob: order sync failed', [
+                    'order_id' => $order->id, 'error' => $e->getMessage(),
+                ]);
             }
-
-            if (!$sepioOrder) continue;
-
-            $this->applyStatus($order, $sepioOrder);
         }
     }
 

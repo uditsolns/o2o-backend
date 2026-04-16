@@ -43,6 +43,8 @@ return new class extends Migration {
             $table->timestamp('ordered_at')->useCurrent();
             $table->timestamp('updated_at')->useCurrent()->useCurrentOnUpdate();
 
+            // TODO: use seals_dispatched_at & seals_delivered_at columns
+
             $table->index(['customer_id', 'status']);
             $table->index('sepio_order_id');
         });

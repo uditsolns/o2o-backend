@@ -32,6 +32,8 @@ return new class extends Migration {
             $table->timestamps();
 
             $table->index(['customer_id', 'is_active']);
+            $table->index(['customer_id', 'sepio_billing_address_id']);
+            $table->index(['customer_id', 'sepio_shipping_address_id']);
         });
     }
 

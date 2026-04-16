@@ -75,7 +75,7 @@ readonly class SealService
             $check = $this->sepioSealService->checkSealAvailability($customer, $seal);
 
             if (!$check['available']) {
-                abort(422, "Seal {$seal->seal_number} is not available on Sepio: {$check['message']}");
+                abort(422, "Seal {$seal->seal_number} is not available on seal provider: {$check['message']}");
             }
         }
 
@@ -131,6 +131,8 @@ readonly class SealService
                 'sepio_status' => $status,
                 'last_scan_at' => $checkedAt,
             ];
+
+            // TODO: move trip to at_port from in_transit, when seal is scanned at origin port
 
             // Escalate our internal status on tamper
             if ($status === 'tampered' && $seal->status !== SealStatus::Tampered) {

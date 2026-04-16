@@ -2,7 +2,9 @@
 
 namespace App\Services\Sepio;
 
+use App\Exceptions\SepioException;
 use App\Models\Customer;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -76,7 +78,10 @@ readonly class SepioClient
         $http = Http::baseUrl(config('sepio.base_url'))
             ->accept('application/json')
             ->timeout(30)
-            ->retry(2, 500);
+            ->retry(2, 500, function (\Throwable $e, $response) {
+                // Only retry on connection failures, never on 4xx/5xx responses
+                return $e instanceof ConnectionException;
+            }, throw: false);
 
         $response = $method === 'get'
             ? $http->get($endpoint, $data)
@@ -95,7 +100,10 @@ readonly class SepioClient
             ->accept('application/json')
             ->withToken($token)
             ->timeout(30)
-            ->retry(2, 500);
+            ->retry(2, 500, function (\Throwable $e, $response) {
+                // Only retry on connection failures, never on 4xx/5xx responses
+                return $e instanceof ConnectionException;
+            }, throw: false);
 
         $response = $method === 'get'
             ? $http->get($endpoint, $data)
@@ -103,10 +111,15 @@ readonly class SepioClient
 
         // Token expired mid-request — refresh once and retry
         if ($response->status() === 401) {
-            $token = $this->authService->refreshToken($customer);
-            $response = $method === 'get'
-                ? $http->withToken($token)->get($endpoint, $data)
-                : $http->withToken($token)->post($endpoint, $data);
+            try {
+                $token = $this->authService->refreshToken($customer);
+                $response = $method === 'get'
+                    ? $http->withToken($token)->get($endpoint, $data)
+                    : $http->withToken($token)->post($endpoint, $data);
+            } catch (SepioException $e) {
+                Log::error('Sepio token refresh failed', ['customer_id' => $customer->id, 'error' => $e->getMessage()]);
+                return $response; // return original 401 response, don't throw
+            }
         }
 
         $this->logIfFailed($endpoint, $response);
@@ -120,8 +133,14 @@ readonly class SepioClient
             Log::warning('Sepio API error', [
                 'endpoint' => $endpoint,
                 'status' => $response->status(),
-                'body' => $response->body(),   // was ->json(), which can be null
+                'body' => json_decode($response->body()),   // was ->json(), which can be null
             ]);
         }
+    }
+
+    public function parseError(Response $response, string $fallback = 'Sepio API error'): string
+    {
+        $json = $response->json() ?? [];
+        return SepioException::extractMessage($json) ?: $fallback;
     }
 }
