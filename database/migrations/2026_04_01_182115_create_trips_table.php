@@ -33,6 +33,16 @@ return new class extends Migration {
             $table->boolean('is_rc_verified')->default(false);
             $table->json('rc_verification_payload')->nullable();
             $table->boolean('is_verification_done')->default(false);
+            // Driver mobile auth — shared with driver app, no Sanctum needed
+            $table->string('tracking_token', 64)->nullable()->unique();
+            // Cursor for FastTag polling — only fetch txns newer than this
+            $table->timestamp('last_fastag_synced_at')->nullable();
+            // Latest known position (denormalized for fast map queries)
+            $table->decimal('last_known_lat', 10, 7)->nullable();
+            $table->decimal('last_known_lng', 10, 7)->nullable();
+            $table->string('last_known_source', 30)->nullable();
+            $table->timestamp('last_tracked_at')->nullable();
+
             // Container
             $table->string('container_number', 50)->nullable();
             $table->string('container_type', 20)->nullable();

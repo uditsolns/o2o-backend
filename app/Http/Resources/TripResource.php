@@ -25,6 +25,14 @@ class TripResource extends JsonResource
             // Vehicle
             'vehicle_number' => $this->vehicle_number,
             'vehicle_type' => $this->vehicle_type,
+            'tracking_token' => $this->when(
+                $request->user()?->customer_id === $this->customer_id || $request->user()?->isPlatformUser(),
+                $this->tracking_token
+            ),
+            'last_known_lat' => $this->last_known_lat,
+            'last_known_lng' => $this->last_known_lng,
+            'last_known_source' => $this->last_known_source,
+            'last_tracked_at' => $this->last_tracked_at,
             // Container & seal
             'container_number' => $this->container_number,
             'container_type' => $this->container_type,

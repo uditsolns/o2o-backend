@@ -1,6 +1,7 @@
 <?php
 
 use App\Console\Commands\SeedSepioPortsCommand;
+use App\Jobs\FastTagPollJob;
 use App\Jobs\SepioOrderStatusSyncJob;
 use App\Jobs\SepioSealAllocationPollJob;
 use App\Jobs\SepioSealStatusSyncJob;
@@ -26,4 +27,8 @@ Schedule::job(SepioSealAllocationPollJob::class)
 
 // Seal scan status: update sepio_status + scan logs for active trip seals
 Schedule::job(SepioSealStatusSyncJob::class)
+    ->everyFifteenMinutes();
+
+// FastTag: poll every 15 min for active road/multimodal trips
+Schedule::job(FastTagPollJob::class)
     ->everyFifteenMinutes();

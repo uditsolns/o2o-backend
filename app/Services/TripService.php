@@ -13,6 +13,7 @@ use App\Models\Trip;
 use App\Models\User;
 use App\Services\Sepio\SepioSealService;
 use Illuminate\Support\Facades\DB;
+use Str;
 
 readonly class TripService
 {
@@ -44,6 +45,7 @@ readonly class TripService
                 'created_by_id' => $createdBy->id,
                 'trip_ref' => $this->generateTripRef(),
                 'status' => TripStatus::Draft,
+                'tracking_token' => Str::random(32),
             ]);
 
             $this->eventService->log($trip, 'trip_created', ['trip_ref' => $trip->trip_ref],

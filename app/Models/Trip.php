@@ -16,7 +16,8 @@ class Trip extends Model
         'is_driver_license_verified', 'is_driver_aadhaar_verified',
         'driver_license_verification_payload', 'driver_aadhaar_verification_payload',
         'vehicle_number', 'vehicle_type', 'is_rc_verified', 'rc_verification_payload',
-        'is_verification_done',
+        'is_verification_done', 'tracking_token', 'last_fastag_synced_at',
+        'last_known_lat', 'last_known_lng', 'last_known_source', 'last_tracked_at',
         'container_number', 'container_type', 'seal_issue_date',
         'cargo_type', 'cargo_description', 'hs_code',
         'gross_weight', 'net_weight', 'weight_unit',
@@ -58,6 +59,9 @@ class Trip extends Model
         'is_rc_verified' => 'boolean',
         'rc_verification_payload' => 'array',
         'is_verification_done' => 'boolean',
+        'last_fastag_synced_at' => 'datetime',
+        'last_tracked_at' => 'datetime',
+        'last_vessel_tracked_at' => 'datetime',
     ];
 
     protected static function booted(): void
@@ -103,8 +107,19 @@ class Trip extends Model
         return $this->hasMany(TripSegment::class)->orderBy('sequence');
     }
 
+    public function trackingPoints(): HasMany
+    {
+        return $this->hasMany(TripTrackingPoint::class)->orderBy('recorded_at');
+    }
+
     public function isLocked(): bool
     {
         return $this->status === TripStatus::Completed;
+    }
+
+    public function requiresVehicleTracking(): bool
+    {
+        return in_array($this->transport_mode, [TripTransportationMode::Road, TripTransportationMode::Multimodal], true)
+            && in_array($this->status, [TripStatus::InTransit, TripStatus::AtPort], true);
     }
 }
