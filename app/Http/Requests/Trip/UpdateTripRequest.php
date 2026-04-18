@@ -2,8 +2,6 @@
 
 namespace App\Http\Requests\Trip;
 
-use App\Enums\TripTransportationMode;
-use App\Enums\TripType;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -17,9 +15,6 @@ class UpdateTripRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'trip_type' => ['sometimes', Rule::enum(TripType::class)],
-            'transport_mode' => ['sometimes', Rule::enum(TripTransportationMode::class)],
-            'seal_id' => ['sometimes', 'nullable', 'integer', 'exists:seals,id'],
             'driver_name' => ['sometimes', 'nullable', 'string', 'max:255'],
             'driver_license' => ['sometimes', 'nullable', 'string', 'max:50'],
             'driver_aadhaar' => ['sometimes', 'nullable', 'string', 'max:20'],
@@ -30,8 +25,6 @@ class UpdateTripRequest extends FormRequest
             'driver_aadhaar_verification_payload' => ['nullable', 'json'],
             'vehicle_number' => ['sometimes', 'nullable', 'string', 'max:50'],
             'vehicle_type' => ['sometimes', 'nullable', Rule::in(['truck', 'trailer', 'container_carrier'])],
-            'transporter_name' => ['sometimes', 'nullable', 'string', 'max:255'],
-            'transporter_id' => ['sometimes', 'nullable', 'string', 'max:100'],
             'is_rc_verified' => ['sometimes', 'boolean'],
             'is_verification_done' => ['sometimes', 'boolean'],
             'rc_verification_payload' => ['nullable', 'json'],
@@ -49,15 +42,40 @@ class UpdateTripRequest extends FormRequest
             'declared_cargo_value' => ['sometimes', 'nullable', 'numeric', 'min:0'],
             'invoice_number' => ['sometimes', 'nullable', 'string', 'max:100'],
             'invoice_date' => ['sometimes', 'nullable', 'date'],
-            'eway_bill_number' => ['sometimes', 'nullable', 'string', 'max:50'],
-            'eway_bill_validity_date' => ['sometimes', 'nullable', 'date'],
-            'dispatch_location_id' => ['sometimes', 'nullable', 'integer', 'exists:customer_locations,id'],
-            'delivery_location_id' => ['sometimes', 'nullable', 'integer', 'exists:customer_locations,id'],
-            'origin_port_id' => ['sometimes', 'nullable', 'integer', 'exists:ports,id'],
-            'destination_port_id' => ['sometimes', 'nullable', 'integer', 'exists:ports,id'],
+            'eway_bill_number' => ['nullable', 'string', 'regex:/^\d{7,15}$/', 'max:20'],
+            'eway_bill_validity_date' => ['nullable', 'date'],
+            'dispatch_location_name' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'dispatch_address' => ['sometimes', 'nullable', 'string'],
+            'dispatch_city' => ['sometimes', 'nullable', 'string', 'max:100'],
+            'dispatch_state' => ['sometimes', 'nullable', 'string', 'max:100'],
+            'dispatch_pincode' => ['sometimes', 'nullable', 'string', 'max:10'],
+            'dispatch_country' => ['sometimes', 'nullable', 'string', 'max:100'],
+            'dispatch_contact_person' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'dispatch_contact_number' => ['sometimes', 'nullable', 'string', 'max:20'],
+            'dispatch_contact_email' => ['sometimes', 'nullable', 'email'],
+            'dispatch_lat' => ['sometimes', 'nullable', 'numeric', 'between:-90,90'],
+            'dispatch_lng' => ['sometimes', 'nullable', 'numeric', 'between:-180,180'],
+            'delivery_location_name' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'delivery_address' => ['sometimes', 'nullable', 'string'],
+            'delivery_city' => ['sometimes', 'nullable', 'string', 'max:100'],
+            'delivery_state' => ['sometimes', 'nullable', 'string', 'max:100'],
+            'delivery_pincode' => ['sometimes', 'nullable', 'string', 'max:10'],
+            'delivery_country' => ['sometimes', 'nullable', 'string', 'max:100'],
+            'delivery_contact_person' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'delivery_contact_number' => ['sometimes', 'nullable', 'string', 'max:20'],
+            'delivery_contact_email' => ['sometimes', 'nullable', 'email'],
+            'delivery_lat' => ['sometimes', 'nullable', 'numeric', 'between:-90,90'],
+            'delivery_lng' => ['sometimes', 'nullable', 'numeric', 'between:-180,180'],
+            'origin_port_name' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'origin_port_code' => ['sometimes', 'nullable', 'string', 'max:20'],
+            'origin_port_category' => ['sometimes', 'nullable', 'string', 'max:20'],
+            'destination_port_name' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'destination_port_code' => ['sometimes', 'nullable', 'string', 'max:20'],
+            'destination_port_category' => ['sometimes', 'nullable', 'string', 'max:20'],
             'dispatch_date' => ['sometimes', 'nullable', 'date'],
             'expected_delivery_date' => ['sometimes', 'nullable', 'date'],
-            'status' => ['sometimes', Rule::in(['in_transit', 'at_port', 'on_vessel', 'vessel_arrived', 'delivered'])],
+            // Intermediate status transitions only (not in_transit or completed — those have dedicated endpoints)
+            'status' => ['sometimes', Rule::in(['at_port', 'on_vessel', 'vessel_arrived', 'delivered'])],
         ];
     }
 }

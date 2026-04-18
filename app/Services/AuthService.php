@@ -47,6 +47,12 @@ class AuthService
             $user->update(['status' => UserStatus::Active]);
         }
 
+        if ($user->isClientUser() && !$user->customer?->is_active) {
+            throw ValidationException::withMessages([
+                'email' => ['Your company account has been deactivated. Please contact support.'],
+            ]);
+        }
+
         $user->update(['last_login_at' => now()]);
 
         $token = $user->createToken('api')->plainTextToken;

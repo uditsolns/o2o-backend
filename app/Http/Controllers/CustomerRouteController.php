@@ -33,10 +33,7 @@ class CustomerRouteController extends Controller
                 }),
             ])
             ->allowedSorts(['name', 'trip_type', 'transport_mode', 'created_at'])
-            ->allowedIncludes([
-                'dispatchLocation', 'deliveryLocation',
-                'originPort', 'destinationPort',
-            ])
+            ->allowedIncludes(['customer'])
             ->defaultSort('name')
             ->paginate($request->query('per_page', 30))
             ->appends($request->query());
@@ -50,18 +47,14 @@ class CustomerRouteController extends Controller
 
         $route = $this->service->store($request->validated(), $request->user());
 
-        return response()->json(new CustomerRouteResource(
-            $route->load('dispatchLocation', 'deliveryLocation', 'originPort', 'destinationPort')
-        ), 201);
+        return response()->json(new CustomerRouteResource($route), 201);
     }
 
     public function show(CustomerRoute $route): JsonResponse
     {
         $this->authorize('view', $route);
 
-        return response()->json(new CustomerRouteResource(
-            $route->load('dispatchLocation', 'deliveryLocation', 'originPort', 'destinationPort')
-        ));
+        return response()->json(new CustomerRouteResource($route));
     }
 
     public function update(UpdateRouteRequest $request, CustomerRoute $route): JsonResponse
@@ -70,9 +63,7 @@ class CustomerRouteController extends Controller
 
         $route = $this->service->update($route, $request->validated(), $request->user());
 
-        return response()->json(new CustomerRouteResource(
-            $route->load('dispatchLocation', 'deliveryLocation', 'originPort', 'destinationPort')
-        ));
+        return response()->json(new CustomerRouteResource($route));
     }
 
     public function destroy(CustomerRoute $route): JsonResponse

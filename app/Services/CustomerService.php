@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Notifications\UserInvited;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Laravel\Sanctum\PersonalAccessToken;
 
 class CustomerService
 {
@@ -90,7 +91,19 @@ class CustomerService
 
     public function toggleActive(Customer $customer): Customer
     {
+        $isBeingDeactivated = $customer->is_active;
+
         $customer->update(['is_active' => !$customer->is_active]);
+
+        // Immediately invalidate all sessions for this customer's users
+        if ($isBeingDeactivated) {
+            PersonalAccessToken::whereHasMorph(
+                'tokenable',
+                [User::class],
+                fn($q) => $q->where('customer_id', $customer->id)
+            )->delete();
+        }
+
         return $customer->fresh();
     }
 }

@@ -12,9 +12,16 @@ class CustomerRoute extends Model
 {
     protected $fillable = [
         'customer_id', 'name', 'trip_type', 'transport_mode',
-        'dispatch_location_id', 'delivery_location_id',
-        'origin_port_id', 'destination_port_id',
-        'notes', 'is_active', 'created_by_id',
+        // Dispatch snapshot
+        'dispatch_location_name', 'dispatch_address', 'dispatch_city', 'dispatch_state',
+        'dispatch_pincode', 'dispatch_country', 'dispatch_lat', 'dispatch_lng',
+        // Delivery snapshot
+        'delivery_location_name', 'delivery_address', 'delivery_city', 'delivery_state',
+        'delivery_pincode', 'delivery_country', 'delivery_lat', 'delivery_lng',
+        // Port snapshots
+        'origin_port_name', 'origin_port_code', 'origin_port_category',
+        'destination_port_name', 'destination_port_code', 'destination_port_category',
+        'is_active', 'created_by_id',
     ];
 
     protected $casts = [
@@ -31,26 +38,6 @@ class CustomerRoute extends Model
     public function customer(): BelongsTo
     {
         return $this->belongsTo(Customer::class);
-    }
-
-    public function dispatchLocation(): BelongsTo
-    {
-        return $this->belongsTo(CustomerLocation::class, 'dispatch_location_id');
-    }
-
-    public function deliveryLocation(): BelongsTo
-    {
-        return $this->belongsTo(CustomerLocation::class, 'delivery_location_id');
-    }
-
-    public function originPort(): BelongsTo
-    {
-        return $this->belongsTo(Port::class, 'origin_port_id');
-    }
-
-    public function destinationPort(): BelongsTo
-    {
-        return $this->belongsTo(Port::class, 'destination_port_id');
     }
 
     public function createdBy(): BelongsTo

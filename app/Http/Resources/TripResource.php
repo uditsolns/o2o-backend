@@ -25,7 +25,6 @@ class TripResource extends JsonResource
             // Vehicle
             'vehicle_number' => $this->vehicle_number,
             'vehicle_type' => $this->vehicle_type,
-            'transporter_name' => $this->transporter_name,
             // Container & seal
             'container_number' => $this->container_number,
             'container_type' => $this->container_type,
@@ -44,7 +43,7 @@ class TripResource extends JsonResource
             'invoice_date' => $this->invoice_date,
             'eway_bill_number' => $this->eway_bill_number,
             'eway_bill_validity_date' => $this->eway_bill_validity_date,
-            // Location snapshots
+            // Dispatch
             'dispatch' => [
                 'location_name' => $this->dispatch_location_name,
                 'address' => $this->dispatch_address,
@@ -54,9 +53,11 @@ class TripResource extends JsonResource
                 'country' => $this->dispatch_country,
                 'contact_person' => $this->dispatch_contact_person,
                 'contact_number' => $this->dispatch_contact_number,
+                'contact_email' => $this->dispatch_contact_email,
                 'lat' => $this->dispatch_lat,
                 'lng' => $this->dispatch_lng,
             ],
+            // Delivery
             'delivery' => [
                 'location_name' => $this->delivery_location_name,
                 'address' => $this->delivery_address,
@@ -66,6 +67,7 @@ class TripResource extends JsonResource
                 'country' => $this->delivery_country,
                 'contact_person' => $this->delivery_contact_person,
                 'contact_number' => $this->delivery_contact_number,
+                'contact_email' => $this->delivery_contact_email,
                 'lat' => $this->delivery_lat,
                 'lng' => $this->delivery_lng,
             ],
@@ -96,22 +98,12 @@ class TripResource extends JsonResource
             // ePOD
             'epod_status' => $this->epod_status,
             'epod_confirmed_at' => $this->epod_confirmed_at,
-            // Destination confirmation
-            'destination_confirmed_at' => $this->destination_confirmed_at,
-            'destination_confirmation_notes' => $this->destination_confirmation_notes,
+            'epod_confirmation_notes' => $this->epod_confirmation_notes,
             // Relations
             'seal' => $this->whenLoaded('seal', fn() => new SealResource($this->seal)),
-            'route' => $this->whenLoaded('route', fn() => [
-                'id' => $this->route->id,
-                'name' => $this->route->name,
-            ]),
-            'created_by' => $this->whenLoaded('createdBy', fn() => [
-                'id' => $this->createdBy->id,
-                'name' => $this->createdBy->name,
-            ]),
-            'documents' => $this->whenLoaded('documents',
-                fn() => TripDocumentResource::collection($this->documents)
-            ),
+            'created_by' => $this->whenLoaded('createdBy', fn() => ['id' => $this->createdBy->id, 'name' => $this->createdBy->name]),
+            'documents' => $this->whenLoaded('documents', fn() => TripDocumentResource::collection($this->documents)),
+            'segments' => $this->whenLoaded('segments', fn() => TripSegmentResource::collection($this->legs)),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

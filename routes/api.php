@@ -29,7 +29,7 @@ Route::prefix('v1')->group(function () {
     });
 
     // ── Authenticated ─────────────────────────────────────────────────────────
-    Route::middleware('auth:sanctum')->group(function () {
+    Route::middleware(['auth:sanctum', 'customer.active'])->group(function () {
 
         Route::prefix('auth')->group(function () {
             Route::post('logout', [AuthController::class, 'logout']);
@@ -120,11 +120,18 @@ Route::prefix('v1')->group(function () {
 
             // Trips
             Route::apiResource('trips', TripController::class)->except('destroy');
+            Route::post('trips/{trip}/start', [TripController::class, 'start']);
+            Route::patch('trips/{trip}/seal', [TripController::class, 'changeSeal']);
+            Route::post('trips/{trip}/confirm-epod', [TripController::class, 'confirmEpod']);
             Route::post('trips/{trip}/vessel-info', [TripController::class, 'addVesselInfo']);
-            Route::post('trips/{trip}/confirm-destination', [TripController::class, 'confirmDestination']);
             Route::get('trips/{trip}/seal-status', [TripController::class, 'sealStatus']);
-            Route::get('trips/{trip}/vessel-position', [TripController::class, 'vesselPosition']);
             Route::get('trips/{trip}/timeline', [TripController::class, 'timeline']);
+
+            // Trip Segments
+            Route::get('trips/{trip}/segments', [TripController::class, 'segments']);
+            Route::post('trips/{trip}/segments', [TripController::class, 'storeSegment']);
+            Route::put('trips/{trip}/segments/{segment}', [TripController::class, 'updateSegment']);
+            Route::delete('trips/{trip}/segments/{segment}', [TripController::class, 'destroySegment']);
 
             // Trip Documents
             Route::get('trips/{trip}/documents', [TripDocumentController::class, 'index']);

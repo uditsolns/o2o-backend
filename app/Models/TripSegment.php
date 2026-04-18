@@ -2,26 +2,23 @@
 
 namespace App\Models;
 
-use App\Enums\TripStatus;
+use App\Enums\TripSegmentTrackingSource;
+use App\Enums\TripSegmentTransportMode;
 use App\Scopes\TenantScope;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-class TripEvent extends Model
+class TripSegment extends Model
 {
-    public $timestamps = false;
-
     protected $fillable = [
-        'customer_id', 'trip_id', 'event_type',
-        'previous_status', 'new_status', 'event_data',
-        'actor_type', 'actor_id', 'created_at'
+        'trip_id', 'customer_id', 'sequence',
+        'source_name', 'destination_name',
+        'transport_mode', 'tracking_source', 'notes',
     ];
 
     protected $casts = [
-        'previous_status' => TripStatus::class,
-        'new_status' => TripStatus::class,
-        'event_data' => 'array',
-        'created_at' => 'datetime',
+        'transport_mode' => TripSegmentTransportMode::class,
+        'tracking_source' => TripSegmentTrackingSource::class,
     ];
 
     protected static function booted(): void

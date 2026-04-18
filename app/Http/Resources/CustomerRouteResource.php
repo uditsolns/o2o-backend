@@ -17,19 +17,36 @@ class CustomerRouteResource extends JsonResource
             'trip_type' => $this->trip_type,
             'transport_mode' => $this->transport_mode,
             'is_active' => $this->is_active,
-            'notes' => $this->notes,
-            'dispatch_location' => $this->whenLoaded('dispatchLocation',
-                fn() => new CustomerLocationResource($this->dispatchLocation)
-            ),
-            'delivery_location' => $this->whenLoaded('deliveryLocation',
-                fn() => new CustomerLocationResource($this->deliveryLocation)
-            ),
-            'origin_port' => $this->whenLoaded('originPort',
-                fn() => new PortResource($this->originPort)
-            ),
-            'destination_port' => $this->whenLoaded('destinationPort',
-                fn() => new PortResource($this->destinationPort)
-            ),
+            'dispatch' => [
+                'location_name' => $this->dispatch_location_name,
+                'address' => $this->dispatch_address,
+                'city' => $this->dispatch_city,
+                'state' => $this->dispatch_state,
+                'pincode' => $this->dispatch_pincode,
+                'country' => $this->dispatch_country,
+                'lat' => $this->dispatch_lat,
+                'lng' => $this->dispatch_lng,
+            ],
+            'delivery' => [
+                'location_name' => $this->delivery_location_name,
+                'address' => $this->delivery_address,
+                'city' => $this->delivery_city,
+                'state' => $this->delivery_state,
+                'pincode' => $this->delivery_pincode,
+                'country' => $this->delivery_country,
+                'lat' => $this->delivery_lat,
+                'lng' => $this->delivery_lng,
+            ],
+            'origin_port' => [
+                'name' => $this->origin_port_name,
+                'code' => $this->origin_port_code,
+                'category' => $this->origin_port_category,
+            ],
+            'destination_port' => [
+                'name' => $this->destination_port_name,
+                'code' => $this->destination_port_code,
+                'category' => $this->destination_port_category,
+            ],
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

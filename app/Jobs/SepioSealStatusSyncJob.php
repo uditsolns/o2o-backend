@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Enums\SealStatus;
+use App\Enums\SepioSealStatus;
 use App\Models\Seal;
 use App\Services\SealService;
 use App\Services\Sepio\SepioClient;
@@ -100,13 +101,13 @@ class SepioSealStatusSyncJob implements ShouldQueue
      * Map Sepio sealStatus string → our sepio_status enum value.
      * Sepio returns "Success", "Tampered", "Broken" etc.
      */
-    private function mapSealStatus(string $sepioStatus): string
+    private function mapSealStatus(string $sepioStatus): SepioSealStatus
     {
         return match (strtolower($sepioStatus)) {
-            'success' => 'valid',
-            'tampered' => 'tampered',
-            'broken' => 'broken',
-            default => 'unknown',
+            'success' => SepioSealStatus::Valid,
+            'tampered' => SepioSealStatus::Tampered,
+            'broken' => SepioSealStatus::Broken,
+            default => SepioSealStatus::Unknown,
         };
     }
 }

@@ -2,12 +2,18 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Requests\Trip\ConfirmDestinationRequest;
+use App\Enums\TripStatus;
+use App\Http\Requests\Trip\ChangeSealRequest;
+use App\Http\Requests\Trip\ConfirmEpodRequest;
+use App\Http\Requests\Trip\StartTripRequest;
+use App\Http\Requests\Trip\StoreTripSegmentRequest;
 use App\Http\Requests\Trip\StoreTripRequest;
 use App\Http\Requests\Trip\UpdateTripRequest;
 use App\Http\Requests\Trip\VesselInfoRequest;
+use App\Http\Resources\TripSegmentResource;
 use App\Http\Resources\TripResource;
 use App\Models\Trip;
+use App\Models\TripSegment;
 use App\Services\TripService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -42,7 +48,7 @@ class TripController extends Controller
                 AllowedFilter::callback('dispatch_date_to', fn($q, $v) => $q->whereDate('dispatch_date', '<=', $v)),
             ])
             ->allowedSorts(['trip_ref', 'status', 'dispatch_date', 'created_at'])
-            ->allowedIncludes(['seal', 'route', 'createdBy', 'documents'])
+            ->allowedIncludes(['seal', 'createdBy', 'documents', 'segments'])
             ->defaultSort('-created_at')
             ->paginate($request->query('per_page', 20))
             ->appends($request->query());
@@ -56,9 +62,7 @@ class TripController extends Controller
 
         $trip = $this->service->store($request->validated(), $request->user());
 
-        return response()->json(new TripResource(
-            $trip->load('seal', 'createdBy')
-        ), 201);
+        return response()->json(new TripResource($trip->load('seal', 'createdBy', 'segments')), 201);
     }
 
     public function show(Trip $trip): JsonResponse
@@ -66,7 +70,7 @@ class TripController extends Controller
         $this->authorize('view', $trip);
 
         return response()->json(new TripResource(
-            $trip->load('seal', 'route', 'createdBy', 'documents')
+            $trip->load('seal', 'createdBy', 'documents', 'segments')
         ));
     }
 
@@ -75,6 +79,35 @@ class TripController extends Controller
         $this->authorize('update', $trip);
 
         $trip = $this->service->update($trip, $request->validated(), $request->user());
+
+        return response()->json(new TripResource($trip->load('seal')));
+    }
+
+    public function start(StartTripRequest $request, Trip $trip): JsonResponse
+    {
+        $this->authorize('update', $trip);
+
+        $trip = $this->service->startTrip($trip, $request->validated(), $request->user());
+
+        return response()->json(new TripResource($trip->load('seal')));
+    }
+
+    public function changeSeal(ChangeSealRequest $request, Trip $trip): JsonResponse
+    {
+        $this->authorize('update', $trip);
+
+        abort_if($trip->status !== TripStatus::Draft, 422, 'Seal can only be changed while the trip is in Draft status.');
+
+        $trip = $this->service->changeSeal($trip, $request->validated('seal_id'), $request->user());
+
+        return response()->json(new TripResource($trip->load('seal')));
+    }
+
+    public function confirmEpod(ConfirmEpodRequest $request, Trip $trip): JsonResponse
+    {
+        $this->authorize('confirmDestination', $trip);
+
+        $trip = $this->service->confirmEpod($trip, $request->validated(), $request->user());
 
         return response()->json(new TripResource($trip->load('seal')));
     }
@@ -88,22 +121,11 @@ class TripController extends Controller
         return response()->json(new TripResource($trip));
     }
 
-    public function confirmDestination(ConfirmDestinationRequest $request, Trip $trip): JsonResponse
-    {
-        $this->authorize('confirmDestination', $trip);
-
-        $trip = $this->service->confirmDestination($trip, $request->validated(), $request->user());
-
-        return response()->json(new TripResource($trip->load('seal')));
-    }
-
     public function timeline(Trip $trip): JsonResponse
     {
         $this->authorize('view', $trip);
 
-        $events = $trip->events()->orderBy('created_at')->get();
-
-        return response()->json($events);
+        return response()->json($trip->events()->orderBy('created_at')->get());
     }
 
     public function sealStatus(Trip $trip): JsonResponse
@@ -114,16 +136,60 @@ class TripController extends Controller
             return response()->json(['message' => 'No seal assigned to this trip.'], 404);
         }
 
-        $latestLog = $trip->seal->statusLogs()
-            ->orderByDesc('checked_at')
-            ->first();
-
         return response()->json([
             'seal_number' => $trip->seal->seal_number,
             'status' => $trip->seal->status,
             'sepio_status' => $trip->seal->sepio_status,
             'last_scan_at' => $trip->seal->last_scan_at,
-            'latest_log' => $latestLog,
+            'latest_log' => $trip->seal->statusLogs()->orderByDesc('checked_at')->first(),
         ]);
+    }
+
+    // ── Trip Segments ─────────────────────────────────────────────────────────────
+
+    public function segments(Trip $trip): AnonymousResourceCollection
+    {
+        $this->authorize('view', $trip);
+
+        return TripSegmentResource::collection($trip->segments);
+    }
+
+    public function storeSegment(StoreTripSegmentRequest $request, Trip $trip): JsonResponse
+    {
+        $this->authorize('update', $trip);
+
+        abort_if($trip->isLocked(), 403, 'Cannot modify segments of a completed trip.');
+
+        $segment = TripSegment::create([
+            ...$request->validated(),
+            'trip_id' => $trip->id,
+            'customer_id' => $trip->customer_id,
+        ]);
+
+        return response()->json(new TripSegmentResource($segment), 201);
+    }
+
+    public function updateSegment(StoreTripSegmentRequest $request, Trip $trip, TripSegment $segment): JsonResponse
+    {
+        $this->authorize('update', $trip);
+
+        abort_if($segment->trip_id !== $trip->id, 404);
+        abort_if($trip->isLocked(), 403, 'Cannot modify segments of a completed trip.');
+
+        $segment->update($request->validated());
+
+        return response()->json(new TripSegmentResource($segment->fresh()));
+    }
+
+    public function destroySegment(Trip $trip, TripSegment $segment): JsonResponse
+    {
+        $this->authorize('update', $trip);
+
+        abort_if($segment->trip_id !== $trip->id, 404);
+        abort_if($trip->isLocked(), 403, 'Cannot modify segments of a completed trip.');
+
+        $segment->delete();
+
+        return response()->json(['message' => 'Segment removed.']);
     }
 }

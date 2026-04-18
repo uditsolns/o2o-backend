@@ -1,25 +1,18 @@
 <?php
 
-use App\Enums\PortCategory;
-use App\Enums\TripStatus;
-use App\Enums\TripTransportationMode;
-use App\Enums\TripType;
+use App\Enums\{PortCategory, TripStatus, TripTransportationMode, TripType};
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
         Schema::create('trips', function (Blueprint $table) {
             $table->id();
             $table->foreignId('customer_id')->constrained()->restrictOnDelete();
             $table->foreignId('created_by_id')->constrained('users')->restrictOnDelete();
-            $table->unsignedBigInteger('seal_id')->nullable(); // deferred FK
-            $table->foreignId('route_id')->nullable()->constrained('customer_routes')->nullOnDelete();
+            $table->unsignedBigInteger('seal_id')->nullable();
             $table->string('trip_ref', 30)->unique();
             $table->enum('status', TripStatus::values())->default(TripStatus::Draft->value);
             $table->enum('trip_type', TripType::values())->nullable();
@@ -37,15 +30,12 @@ return new class extends Migration {
             // Vehicle
             $table->string('vehicle_number', 50)->nullable();
             $table->enum('vehicle_type', ['truck', 'trailer', 'container_carrier'])->nullable();
-            $table->string('transporter_name')->nullable();
-            $table->string('transporter_id', 100)->nullable();
             $table->boolean('is_rc_verified')->default(false);
             $table->json('rc_verification_payload')->nullable();
             $table->boolean('is_verification_done')->default(false);
             // Container
             $table->string('container_number', 50)->nullable();
             $table->string('container_type', 20)->nullable();
-            $table->date('seal_issue_date')->nullable();
             // Cargo
             $table->string('cargo_type', 100)->nullable();
             $table->text('cargo_description')->nullable();
@@ -69,6 +59,7 @@ return new class extends Migration {
             $table->string('dispatch_country', 100)->nullable();
             $table->string('dispatch_contact_person')->nullable();
             $table->string('dispatch_contact_number', 20)->nullable();
+            $table->string('dispatch_contact_email')->nullable();
             $table->decimal('dispatch_lat', 10, 7)->nullable();
             $table->decimal('dispatch_lng', 10, 7)->nullable();
             // Delivery snapshot
@@ -80,6 +71,7 @@ return new class extends Migration {
             $table->string('delivery_country', 100)->nullable();
             $table->string('delivery_contact_person')->nullable();
             $table->string('delivery_contact_number', 20)->nullable();
+            $table->string('delivery_contact_email')->nullable();
             $table->decimal('delivery_lat', 10, 7)->nullable();
             $table->decimal('delivery_lng', 10, 7)->nullable();
             // Port snapshots
@@ -94,8 +86,6 @@ return new class extends Migration {
             $table->string('vessel_imo_number', 20)->nullable();
             $table->string('voyage_number', 100)->nullable();
             $table->string('bill_of_lading', 100)->nullable();
-            $table->string('vessel_tracking_ref')->nullable();
-            $table->json('vessel_tracking_data')->nullable();
             $table->timestamp('eta')->nullable();
             $table->timestamp('etd')->nullable();
             $table->timestamp('last_vessel_tracked_at')->nullable();
@@ -105,14 +95,11 @@ return new class extends Migration {
             $table->date('expected_delivery_date')->nullable();
             $table->date('actual_delivery_date')->nullable();
             $table->timestamp('trip_end_time')->nullable();
-            // ePOD
+            // ePOD (merged with destination confirmation)
             $table->enum('epod_status', ['pending', 'completed'])->default('pending');
             $table->timestamp('epod_confirmed_at')->nullable();
             $table->foreignId('epod_confirmed_by_id')->nullable()->constrained('users')->nullOnDelete();
-            // Destination confirmation
-            $table->foreignId('destination_confirmed_by_id')->nullable()->constrained('users')->nullOnDelete();
-            $table->text('destination_confirmation_notes')->nullable();
-            $table->timestamp('destination_confirmed_at')->nullable();
+            $table->text('epod_confirmation_notes')->nullable();
             $table->timestamps();
 
             $table->index(['customer_id', 'status']);
@@ -122,9 +109,6 @@ return new class extends Migration {
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::dropIfExists('trips');

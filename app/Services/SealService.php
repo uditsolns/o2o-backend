@@ -4,9 +4,13 @@ namespace App\Services;
 
 use App\Enums\SealStatus;
 use App\Enums\SealOrderStatus;
+use App\Enums\SepioSealStatus;
+use App\Enums\TripStatus;
 use App\Models\Seal;
 use App\Models\SealOrder;
 use App\Models\SealStatusLog;
+use App\Models\Trip;
+use App\Models\TripEvent;
 use App\Services\Sepio\SepioSealService;
 use Illuminate\Support\Facades\DB;
 
@@ -51,8 +55,9 @@ readonly class SealService
 
             $order->update([
                 'status' => SealOrderStatus::Completed,
-                'seals_dispatched_at' => $dispatchedAt,
                 'seals_delivered_at' => $now,
+                // Only set dispatched_at as fallback if not already stamped by the status sync job
+                ...(!$order->seals_dispatched_at ? ['seals_dispatched_at' => $dispatchedAt] : []),
             ]);
         });
     }
@@ -106,7 +111,7 @@ readonly class SealService
      */
     public function syncStatus(Seal $seal, array $sepioPayload): Seal
     {
-        $status = $sepioPayload['status'];           // valid|tampered|broken|unknown
+        $status = $sepioPayload['status'];
         $scanLocation = $sepioPayload['location'] ?? null;
         $scannedLat = $sepioPayload['lat'] ?? null;
         $scannedLng = $sepioPayload['lng'] ?? null;
@@ -132,14 +137,38 @@ readonly class SealService
                 'last_scan_at' => $checkedAt,
             ];
 
-            // TODO: move trip to at_port from in_transit, when seal is scanned at origin port
-
             // Escalate our internal status on tamper
             if ($status === 'tampered' && $seal->status !== SealStatus::Tampered) {
                 $updates['status'] = SealStatus::Tampered;
             }
 
             $seal->update($updates);
+
+            // Auto-advance trip from in_transit → at_port when seal scanned at origin port
+            if ($seal->trip_id && in_array($status, [SepioSealStatus::Valid, SepioSealStatus::Unknown])) {
+                $trip = $seal->trip;
+                if (
+                    $trip &&
+                    $trip->status === TripStatus::InTransit &&
+                    $trip->origin_port_code &&
+                    $scanLocation &&
+                    str_contains(strtoupper($scanLocation), '(' . strtoupper($trip->origin_port_code) . ')')
+                ) {
+                    $trip->update(['status' => TripStatus::AtPort]);
+
+                    TripEvent::create([
+                        'customer_id' => $trip->customer_id,
+                        'trip_id' => $trip->id,
+                        'event_type' => 'status_changed',
+                        'previous_status' => TripStatus::InTransit,
+                        'new_status' => TripStatus::AtPort,
+                        'event_data' => ['scan_location' => $scanLocation, 'triggered_by' => 'seal_scan'],
+                        'actor_type' => 'system',
+                        'actor_id' => null,
+                        'created_at' => now(),
+                    ]);
+                }
+            }
         });
 
         return $seal->fresh();

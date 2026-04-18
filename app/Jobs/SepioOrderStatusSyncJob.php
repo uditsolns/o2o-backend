@@ -143,7 +143,15 @@ class SepioOrderStatusSyncJob implements ShouldQueue
 
         if ($this->isRegressionOrSame($order->status, $newStatus)) return;
 
-        $order->update(['status' => $newStatus]);
+        $orderUpdates = ['status' => $newStatus];
+
+        if ($newStatus === SealOrderStatus::InTransit && is_null($order->seals_dispatched_at)) {
+            $orderUpdates['seals_dispatched_at'] = now();
+        } else if ($newStatus === SealOrderStatus::Completed && is_null($order->seals_delivered_at)) {
+            $orderUpdates['seals_delivered_at'] = now();
+        }
+
+        $order->update($orderUpdates);
 
         Log::info('SepioOrderStatusSyncJob: status advanced', [
             'order_id' => $order->id,
@@ -160,10 +168,10 @@ class SepioOrderStatusSyncJob implements ShouldQueue
     private function mapSepioStatus(string $sepioStatus): ?SealOrderStatus
     {
         return match (strtolower(trim($sepioStatus))) {
-            'Placed' => SealOrderStatus::OrderPlaced,
-            'In Progress' => SealOrderStatus::InProgress,
-            'In Transit' => SealOrderStatus::InTransit,
-            'Completed' => SealOrderStatus::MfgCompleted,
+            'placed' => SealOrderStatus::OrderPlaced,
+            'in progress' => SealOrderStatus::InProgress,
+            'in transit' => SealOrderStatus::InTransit,
+            'completed' => SealOrderStatus::MfgCompleted,
             'cancelled' => SealOrderStatus::MfgRejected,
             default => null,
         };
