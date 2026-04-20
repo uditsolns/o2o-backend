@@ -8,7 +8,9 @@ enum TripStatus: string
     case InTransit = 'in_transit';
     case AtPort = 'at_port';
     case OnVessel = 'on_vessel';
+    case InTransshipment = 'in_transshipment';
     case VesselArrived = 'vessel_arrived';
+    case OutForDelivery = 'out_for_delivery';
     case Delivered = 'delivered';
     case Completed = 'completed';
 

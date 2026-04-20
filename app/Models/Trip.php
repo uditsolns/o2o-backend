@@ -5,7 +5,7 @@ namespace App\Models;
 use App\Enums\{TripStatus, TripType, TripTransportationMode};
 use App\Scopes\TenantScope;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\{BelongsTo, HasMany};
+use Illuminate\Database\Eloquent\Relations\{BelongsTo, HasMany, HasOne};
 
 class Trip extends Model
 {
@@ -35,6 +35,7 @@ class Trip extends Model
         'last_vessel_tracked_at', 'dispatch_date', 'trip_start_time', 'expected_delivery_date',
         'actual_delivery_date', 'trip_end_time',
         'epod_status', 'epod_confirmed_at', 'epod_confirmed_by_id', 'epod_confirmation_notes',
+        'carrier_scac', 'mt_vessel_ship_id', 'customs_hold', 'last_vessel_position_at',
     ];
 
     protected $casts = [
@@ -62,6 +63,8 @@ class Trip extends Model
         'last_fastag_synced_at' => 'datetime',
         'last_tracked_at' => 'datetime',
         'last_vessel_tracked_at' => 'datetime',
+        'last_vessel_position_at' => 'datetime',
+        'customs_hold' => 'boolean',
     ];
 
     protected static function booted(): void
@@ -112,6 +115,16 @@ class Trip extends Model
         return $this->hasMany(TripTrackingPoint::class)->orderBy('recorded_at');
     }
 
+    public function containerTracking(): HasOne
+    {
+        return $this->hasOne(TripContainerTracking::class);
+    }
+
+    public function shipmentMilestones(): HasMany
+    {
+        return $this->hasMany(TripShipmentMilestone::class)->orderBy('sequence_order');
+    }
+
     public function isLocked(): bool
     {
         return $this->status === TripStatus::Completed;
@@ -121,5 +134,11 @@ class Trip extends Model
     {
         return in_array($this->transport_mode, [TripTransportationMode::Road, TripTransportationMode::Multimodal], true)
             && in_array($this->status, [TripStatus::InTransit, TripStatus::AtPort], true);
+    }
+
+    public function requiresSeaTracking(): bool
+    {
+        return in_array($this->transport_mode, [TripTransportationMode::Sea, TripTransportationMode::Multimodal], true)
+            && !in_array($this->status, [TripStatus::Draft, TripStatus::Completed], true);
     }
 }

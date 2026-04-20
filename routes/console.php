@@ -6,6 +6,7 @@ use App\Jobs\SepioOrderStatusSyncJob;
 use App\Jobs\SepioSealAllocationPollJob;
 use App\Jobs\SepioSealStatusSyncJob;
 use App\Jobs\SepioVerificationStatusPollJob;
+use App\Jobs\VesselAisPollJob;
 use Illuminate\Support\Facades\Schedule;
 
 Schedule::command('telescope:prune')->daily();
@@ -32,3 +33,6 @@ Schedule::job(SepioSealStatusSyncJob::class)
 // FastTag: poll every 15 min for active road/multimodal trips
 Schedule::job(FastTagPollJob::class)
     ->everyFifteenMinutes();
+
+// AIS vessel position: every 30 min for active sea legs
+Schedule::job(VesselAisPollJob::class)->everyThirtyMinutes();

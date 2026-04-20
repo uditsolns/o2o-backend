@@ -94,11 +94,16 @@ return new class extends Migration {
             // Vessel
             $table->string('vessel_name')->nullable();
             $table->string('vessel_imo_number', 20)->nullable();
+            $table->string('mt_vessel_ship_id')->nullable()
+                ->comment('MarineTraffic SHIP_ID resolved from IMO');
             $table->string('voyage_number', 100)->nullable();
             $table->string('bill_of_lading', 100)->nullable();
+            $table->string('carrier_scac', 10)->nullable()
+                ->comment('Shipping line SCAC code e.g. MAEU, MSCU');
             $table->timestamp('eta')->nullable();
             $table->timestamp('etd')->nullable();
             $table->timestamp('last_vessel_tracked_at')->nullable();
+            $table->timestamp('last_vessel_position_at')->nullable();
             // Timeline
             $table->date('dispatch_date')->nullable();
             $table->timestamp('trip_start_time')->nullable();
@@ -107,6 +112,7 @@ return new class extends Migration {
             $table->timestamp('trip_end_time')->nullable();
             // ePOD (merged with destination confirmation)
             $table->enum('epod_status', ['pending', 'completed'])->default('pending');
+            $table->boolean('customs_hold')->default(false);
             $table->timestamp('epod_confirmed_at')->nullable();
             $table->foreignId('epod_confirmed_by_id')->nullable()->constrained('users')->nullOnDelete();
             $table->text('epod_confirmation_notes')->nullable();

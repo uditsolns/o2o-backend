@@ -36,7 +36,6 @@ class TripResource extends JsonResource
             // Container & seal
             'container_number' => $this->container_number,
             'container_type' => $this->container_type,
-            'seal_issue_date' => $this->seal_issue_date,
             // Cargo
             'cargo_type' => $this->cargo_type,
             'cargo_description' => $this->cargo_description,
@@ -95,6 +94,9 @@ class TripResource extends JsonResource
             'vessel_imo_number' => $this->vessel_imo_number,
             'voyage_number' => $this->voyage_number,
             'bill_of_lading' => $this->bill_of_lading,
+            'carrier_scac' => $this->carrier_scac,
+            'customs_hold' => $this->customs_hold,
+            'last_vessel_position_at' => $this->last_vessel_position_at,
             'eta' => $this->eta,
             'etd' => $this->etd,
             // Timeline
@@ -108,10 +110,14 @@ class TripResource extends JsonResource
             'epod_confirmed_at' => $this->epod_confirmed_at,
             'epod_confirmation_notes' => $this->epod_confirmation_notes,
             // Relations
-            'seal' => $this->whenLoaded('seal', fn() => new SealResource($this->seal)),
-            'created_by' => $this->whenLoaded('createdBy', fn() => ['id' => $this->createdBy->id, 'name' => $this->createdBy->name]),
-            'documents' => $this->whenLoaded('documents', fn() => TripDocumentResource::collection($this->documents)),
-            'segments' => $this->whenLoaded('segments', fn() => TripSegmentResource::collection($this->legs)),
+            'seal' => new SealResource($this->whenLoaded('seal')),
+            'created_by' => $this->whenLoaded('createdBy', fn() => [
+                'id' => $this->createdBy->id,
+                'name' => $this->createdBy->name
+            ]),
+            'documents' => TripDocumentResource::collection($this->whenLoaded('documents')),
+            'segments' => TripSegmentResource::collection($this->whenLoaded('segments')),
+            'container_tracking' => new TripContainerTrackingResource($this->whenLoaded('containerTracking')),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

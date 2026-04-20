@@ -10,6 +10,7 @@ enum TripSegmentTrackingSource: string
     case DriverMobile = 'driver_mobile';
     case DriverSim = 'driver_sim';
     case FastTag = 'fast_tag';
+    case VesselAis = 'vessel_ais';
 
     public static function values(): array
     {

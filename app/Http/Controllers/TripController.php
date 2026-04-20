@@ -10,8 +10,10 @@ use App\Http\Requests\Trip\StoreTripSegmentRequest;
 use App\Http\Requests\Trip\StoreTripRequest;
 use App\Http\Requests\Trip\UpdateTripRequest;
 use App\Http\Requests\Trip\VesselInfoRequest;
+use App\Http\Resources\TripContainerTrackingResource;
 use App\Http\Resources\TripSegmentResource;
 use App\Http\Resources\TripResource;
+use App\Http\Resources\TripShipmentMilestoneResource;
 use App\Models\Trip;
 use App\Models\TripSegment;
 use App\Services\TripService;
@@ -70,7 +72,7 @@ class TripController extends Controller
         $this->authorize('view', $trip);
 
         return response()->json(new TripResource(
-            $trip->load('seal', 'createdBy', 'documents', 'segments')
+            $trip->load('seal', 'createdBy', 'documents', 'segments', 'containerTracking')
         ));
     }
 
@@ -191,5 +193,25 @@ class TripController extends Controller
         $segment->delete();
 
         return response()->json(['message' => 'Segment removed.']);
+    }
+
+    public function containerTracking(Trip $trip): JsonResponse
+    {
+        $this->authorize('view', $trip);
+
+        $tracking = $trip->containerTracking;
+
+        return response()->json(
+            $tracking ? new TripContainerTrackingResource($tracking) : null
+        );
+    }
+
+    public function shipmentMilestones(Trip $trip): AnonymousResourceCollection
+    {
+        $this->authorize('view', $trip);
+
+        return TripShipmentMilestoneResource::collection(
+            $trip->shipmentMilestones
+        );
     }
 }

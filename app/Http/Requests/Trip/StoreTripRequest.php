@@ -110,6 +110,13 @@ class StoreTripRequest extends FormRequest
             'bill_of_lading' => ['nullable', 'string', 'max:100'],
             'eta' => ['nullable', 'date'],
             'etd' => ['nullable', 'date'],
+            'carrier_scac' => [
+                Rule::requiredIf($isSea),
+                'nullable',
+                'string',
+                'max:10',
+                'regex:/^[A-Z0-9]{2,10}$/',
+            ],
 
             // Segments (optional)
             'segments' => ['nullable', 'array'],

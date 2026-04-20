@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CommandController;
+use App\Http\Controllers\ContainerTrackingWebhookController;
 use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\CustomerPortController;
 use App\Http\Controllers\CustomerWalletController;
@@ -127,10 +128,14 @@ Route::prefix('v1')->group(function () {
             Route::post('trips/{trip}/vessel-info', [TripController::class, 'addVesselInfo']);
             Route::get('trips/{trip}/seal-status', [TripController::class, 'sealStatus']);
             Route::get('trips/{trip}/timeline', [TripController::class, 'timeline']);
+
             // Vehicle Tracking
             Route::get('trips/{trip}/tracking', [TripTrackingController::class, 'history']);
             Route::get('trips/{trip}/tracking/latest', [TripTrackingController::class, 'latest']);
             Route::post('trips/{trip}/location', [TripTrackingController::class, 'pushLocation']);
+
+            // Sea / Container tracking
+            Route::get('trips/{trip}/milestones', [TripController::class, 'shipmentMilestones']);
 
             // Trip Segments
             Route::get('trips/{trip}/segments', [TripController::class, 'segments']);
@@ -164,6 +169,7 @@ Route::prefix('v1')->group(function () {
     });
 
     Route::post('tracking/driver-mobile', [TripTrackingController::class, 'driverPush']);
+    Route::post('webhooks/container-tracking', [ContainerTrackingWebhookController::class, 'handle']);
 
     Route::post("commands", CommandController::class);
 });

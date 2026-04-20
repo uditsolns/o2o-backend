@@ -4,7 +4,9 @@ namespace App\Services;
 
 use App\Enums\SealStatus;
 use App\Enums\TripStatus;
+use App\Enums\TripTransportationMode;
 use App\Exceptions\SepioException;
+use App\Jobs\RegisterContainerTrackingJob;
 use App\Models\CustomerConsignee;
 use App\Models\CustomerConsignor;
 use App\Models\Seal;
@@ -13,7 +15,7 @@ use App\Models\Trip;
 use App\Models\User;
 use App\Services\Sepio\SepioSealService;
 use Illuminate\Support\Facades\DB;
-use Str;
+use Illuminate\Support\Str;
 
 readonly class TripService
 {
@@ -120,6 +122,13 @@ readonly class TripService
                     $trip->update(['status' => TripStatus::Draft, 'trip_start_time' => null]);
                     throw $e;
                 }
+            }
+
+            // Register container tracking for sea/multimodal trips
+            if (in_array($trip->transport_mode, [TripTransportationMode::Sea, TripTransportationMode::Multimodal], true)
+                && !empty($trip->container_number)
+                && !empty($trip->carrier_scac)) {
+                RegisterContainerTrackingJob::dispatch($trip->fresh());
             }
 
             $this->eventService->log($trip->fresh(), 'trip_started', [],
