@@ -4,17 +4,18 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CommandController;
 use App\Http\Controllers\ContainerTrackingWebhookController;
 use App\Http\Controllers\CustomerController;
+use App\Http\Controllers\CustomerLocationController;
 use App\Http\Controllers\CustomerPortController;
+use App\Http\Controllers\CustomerRouteController;
 use App\Http\Controllers\CustomerWalletController;
 use App\Http\Controllers\DashboardController;
-use App\Http\Controllers\CustomerLocationController;
+use App\Http\Controllers\Inspectors\MarineTrafficInspectorController;
+use App\Http\Controllers\Inspectors\SepioInspectorController;
 use App\Http\Controllers\OnboardingController;
 use App\Http\Controllers\PortController;
-use App\Http\Controllers\CustomerRouteController;
 use App\Http\Controllers\SealController;
 use App\Http\Controllers\SealOrderController;
 use App\Http\Controllers\SealPricingController;
-use App\Http\Controllers\SepioInspectorController;
 use App\Http\Controllers\TripController;
 use App\Http\Controllers\TripDocumentController;
 use App\Http\Controllers\TripTrackingController;
@@ -159,12 +160,22 @@ Route::prefix('v1')->group(function () {
 
         Route::prefix('sepio-inspector')
             ->middleware('can:inspect-sepio')
+            ->controller(SepioInspectorController::class)
             ->group(function () {
-                Route::get('/me', [SepioInspectorController::class, 'me']);
-                Route::get('/customers', [SepioInspectorController::class, 'customers']);
-                Route::post('/proxy', [SepioInspectorController::class, 'proxy']);
-                Route::post('/proxy-file', [SepioInspectorController::class, 'proxyFile']);
-                Route::post('/refresh-token', [SepioInspectorController::class, 'refreshToken']);
+                Route::get('/customers', 'customers');
+                Route::post('/proxy', 'proxy');
+                Route::post('/proxy-file', 'proxyFile');
+                Route::post('/refresh-token', 'refreshToken');
+            });
+
+        Route::prefix('marine-traffic-inspector')
+            ->middleware('can:inspect-marinetraffic')
+            ->controller(MarineTrafficInspectorController::class)
+            ->group(function () {
+                Route::post('/container', 'proxyContainer');
+                Route::post('/vessel', 'proxyVessel');
+                Route::get('/active-trackings', 'activeTrackings');
+                Route::get('/active-vessels', 'activeVesselTrips');
             });
     });
 

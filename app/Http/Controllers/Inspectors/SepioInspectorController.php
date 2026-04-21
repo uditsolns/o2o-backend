@@ -1,37 +1,19 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Http\Controllers\Inspectors;
 
+use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use App\Services\Sepio\SepioAuthService;
 use App\Services\Sepio\SepioClient;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\View\View;
 
 class SepioInspectorController extends Controller
 {
     private function guardProd(): void
     {
         abort_if(app()->isProduction(), 404);
-    }
-
-    public function index(): View
-    {
-        $this->guardProd();
-        return view('sepio.inspector');
-    }
-
-    public function me(Request $request): JsonResponse
-    {
-        $this->guardProd();
-        $user = $request->user();
-
-        return response()->json([
-            'id' => $user->id,
-            'name' => $user->name,
-            'email' => $user->email,
-        ]);
     }
 
     public function customers(): JsonResponse

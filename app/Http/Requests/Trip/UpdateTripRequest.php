@@ -30,7 +30,6 @@ class UpdateTripRequest extends FormRequest
             'rc_verification_payload' => ['nullable', 'json'],
             'container_number' => ['sometimes', 'nullable', 'string', 'max:50'],
             'container_type' => ['sometimes', 'nullable', 'string', 'max:20'],
-            'seal_issue_date' => ['sometimes', 'nullable', 'date'],
             'cargo_type' => ['sometimes', 'nullable', 'string', 'max:100'],
             'cargo_description' => ['sometimes', 'nullable', 'string'],
             'hs_code' => ['sometimes', 'nullable', 'string', 'max:20'],

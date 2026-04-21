@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sepio Inspector · {{ config('app.name') }}</title>
+    <title>API Inspector · {{ config('app.name') }}</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link
         href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap"
@@ -14,6 +14,9 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script>
         window.APP_URL = "{{ config('app.url') }}";
+        window.SEPIO_BASE = "{{ config('sepio.base_url') }}";
+        window.MT_CONTAINER_BASE = "{{ config('marinetraffic.container_base_url') }}";
+        window.MT_VESSEL_BASE = "{{ config('marinetraffic.vessel_base_url') }}";
     </script>
     <style>
         *, *::before, *::after {
@@ -93,7 +96,6 @@
             cursor: ew-resize;
         }
     </style>
-    <script>window.__SEPIO_BASE = "{{ config('sepio.base_url') }}";</script>
 </head>
 <body>
 <div id="root"></div>
@@ -102,11 +104,13 @@
     <script type="text/babel">
         const {useState, useEffect, useRef, useCallback} = React;
 
-        const BASE = window.__SEPIO_BASE;
         const API = window.APP_URL + '/api/v1';
-        const T_KEY = 'sepio_insp_tok';
+        const SEPIO_BASE = window.SEPIO_BASE;
+        const MT_CONT = window.MT_CONTAINER_BASE;
+        const MT_VES = window.MT_VESSEL_BASE;
+        const T_KEY = 'api_insp_tok';
 
-        /* ── Auth helpers ─────────────────────────────────────────────────────────── */
+        /* ── Auth helpers ──────────────────────────────────────────────────────── */
         const getToken = () => localStorage.getItem(T_KEY);
         const saveToken = (t) => t ? localStorage.setItem(T_KEY, t) : localStorage.removeItem(T_KEY);
 
@@ -120,18 +124,53 @@
                 ...(opts.headers || {}),
             };
             return fetch(url, {...opts, headers}).then(r => {
-                if (r.status === 401) window.dispatchEvent(new Event('sepio:401'));
+                if (r.status === 401) window.dispatchEvent(new Event('insp:401'));
                 return r;
             });
         };
 
-        /* ── Endpoint catalogue ───────────────────────────────────────────────────── */
+        /* ── Helpers ───────────────────────────────────────────────────────────── */
+        const fmtJson = (s) => {
+            try {
+                return JSON.stringify(JSON.parse(s), null, 2);
+            } catch {
+                return s;
+            }
+        };
+
+        const colorJson = (s) =>
+            s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/("(?:\\u[\dA-Fa-f]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(?:true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/g, (m) => {
+                    if (/^"/.test(m)) return `<span class="${/:$/.test(m) ? 'jk' : 'js'}">${m}</span>`;
+                    if (/true|false/.test(m)) return `<span class="jb">${m}</span>`;
+                    if (/null/.test(m)) return `<span class="jz">${m}</span>`;
+                    return `<span class="jn">${m}</span>`;
+                });
+
         const fmtDate = (d) => d.toISOString().replace('T', ' ').slice(0, 23);
 
-        const GROUPS = [
+        const METHOD_CLS = {
+            GET: 'text-emerald-400 bg-emerald-500/20 border border-emerald-500/30',
+            POST: 'text-sky-400 bg-sky-500/20 border border-sky-500/30',
+        };
+
+        const statusCls = (s) => {
+            if (!s) return 'text-slate-400 bg-slate-800';
+            if (s >= 200 && s < 300) return 'text-emerald-400 bg-emerald-500/20 border border-emerald-500/30';
+            if (s >= 400 && s < 500) return 'text-amber-400 bg-amber-500/20 border border-amber-500/30';
+            return 'text-red-400 bg-red-500/20 border border-red-500/30';
+        };
+
+        const initials = (name = '') => name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+
+        /* ══════════════════════════════════════════════════════════════════════
+           ENDPOINT CATALOGUES
+        ══════════════════════════════════════════════════════════════════════ */
+
+        /* ── SEPIO endpoints ─────────────────────────────────────────────── */
+        const SEPIO_GROUPS = [
             {
-                id: 'master', label: 'Master Data', dot: '#06b6d4',
-                eps: [
+                id: 'master', label: 'Master Data', dot: '#06b6d4', eps: [
                     {
                         id: 'ports',
                         label: 'Customs Port List',
@@ -165,8 +204,7 @@
                 ]
             },
             {
-                id: 'auth', label: 'Authentication', dot: '#f59e0b',
-                eps: [
+                id: 'auth', label: 'Authentication', dot: '#f59e0b', eps: [
                     {
                         id: 'refresh',
                         label: 'Refresh Token',
@@ -181,8 +219,7 @@
                 ]
             },
             {
-                id: 'reg', label: 'Registration', dot: '#8b5cf6',
-                eps: [
+                id: 'reg', label: 'Registration', dot: '#8b5cf6', eps: [
                     {
                         id: 'reg-co',
                         label: 'Register Company',
@@ -255,8 +292,7 @@
                 ]
             },
             {
-                id: 'kyc', label: 'KYC Documents', dot: '#10b981',
-                eps: [
+                id: 'kyc', label: 'KYC Documents', dot: '#10b981', eps: [
                     {
                         id: 'kyc-gst',
                         label: 'Add KYC (GST / IEC / PAN)',
@@ -286,7 +322,7 @@
                         auth: true,
                         needsCust: true,
                         file: true,
-                        note: 'Upload self-stuffing certificate. documentType: selfCopy, documentName: CHEQ.',
+                        note: 'Upload self-stuffing certificate.',
                         payload: (c) => ({
                             companyId: c?.sepio_company_id || '',
                             IEC: c?.iec_number || '',
@@ -307,7 +343,7 @@
                         auth: true,
                         needsCust: true,
                         file: true,
-                        note: 'Upload CFS certificate of registration. documentName: CFSREGISTRATION.',
+                        note: 'Upload CFS certificate of registration.',
                         payload: (c) => ({
                             companyId: c?.sepio_company_id || '',
                             IEC: c?.iec_number || '',
@@ -339,8 +375,7 @@
                 ]
             },
             {
-                id: 'verify', label: 'Verification', dot: '#06b6d4',
-                eps: [
+                id: 'verify', label: 'Verification', dot: '#06b6d4', eps: [
                     {
                         id: 'doc-verify',
                         label: 'Document Verification Status',
@@ -354,8 +389,7 @@
                 ]
             },
             {
-                id: 'preorder', label: 'Pre-Order', dot: '#f97316',
-                eps: [
+                id: 'preorder', label: 'Pre-Order', dot: '#f97316', eps: [
                     {
                         id: 'ship-list',
                         label: 'Shipping Address List',
@@ -363,7 +397,7 @@
                         path: '/registrationModule/getshippinglist',
                         auth: true,
                         needsCust: true,
-                        note: 'Get all registered shipping addresses. Use addressId when placing an order.',
+                        note: 'Get all registered shipping addresses.',
                         payload: (c) => ({companyId: c?.sepio_company_id || ''})
                     },
                     {
@@ -373,7 +407,7 @@
                         path: '/registrationModule/getbillinglistnew',
                         auth: true,
                         needsCust: true,
-                        note: 'Get all registered billing addresses. Use addressId when placing an order.',
+                        note: 'Get all registered billing addresses.',
                         payload: (c) => ({companyId: c?.sepio_company_id || ''})
                     },
                     {
@@ -399,8 +433,7 @@
                 ]
             },
             {
-                id: 'orders', label: 'Orders', dot: '#f43f5e',
-                eps: [
+                id: 'orders', label: 'Orders', dot: '#f43f5e', eps: [
                     {
                         id: 'place-order',
                         label: 'Place Order',
@@ -474,8 +507,7 @@
                 ]
             },
             {
-                id: 'seals', label: 'Seals & Tracking', dot: '#14b8a6',
-                eps: [
+                id: 'seals', label: 'Seals & Tracking', dot: '#14b8a6', eps: [
                     {
                         id: 'alloc-pull',
                         label: 'Seal Allocation Pull',
@@ -514,42 +546,158 @@
             },
         ];
 
-        /* ── Helpers ──────────────────────────────────────────────────────────────── */
-        const fmtJson = (s) => {
-            try {
-                return JSON.stringify(JSON.parse(s), null, 2);
-            } catch {
-                return s;
-            }
-        };
+        /* ── Marine Traffic endpoints ────────────────────────────────────── */
+        const MT_GROUPS = [
+            {
+                id: 'mt-vessel', label: 'Vessel AIS', dot: '#3b82f6', eps: [
+                    {
+                        id: 'mt-single-vessel',
+                        label: 'Single Vessel Position',
+                        method: 'GET',
+                        endpoint: 'exportvessel',
+                        service: 'vessel',
+                        note: `Get the latest position for a single vessel by IMO or MMSI. SPEED is returned as knots×10. HEADING values of -1 or 511 indicate no data.`,
+                        payload: () => ({v: 6, imo: '', timespan: 60, protocol: 'jsono'})
+                    },
+                    {
+                        id: 'mt-multi-vessel',
+                        label: 'Multiple Vessel Positions',
+                        method: 'GET',
+                        endpoint: 'exportvessels',
+                        service: 'vessel',
+                        note: 'Get latest positions for multiple vessels. Supports vessel type filtering, pagination via cursor, and up to 24-hour timespan.',
+                        payload: () => ({v: 9, timespan: 60, protocol: 'jsono', limit: 1000})
+                    },
+                ]
+            },
+            {
+                id: 'mt-container', label: 'Container Tracking', dot: '#06b6d4', eps: [
+                    {
+                        id: 'mt-create-tracking',
+                        label: 'Create Tracking Request',
+                        method: 'POST',
+                        path: 'tracking-requests',
+                        service: 'container',
+                        note: `Register a container for tracking. Use referenceNumberType: 'container' and provide a carrier SCAC code. Webhooks will fire on status change.`,
+                        payload: () => ({
+                            data: [{
+                                type: 'tracking_request',
+                                attributes: {referenceNumberType: 'container', referenceNumber: '', scac: ''}
+                            }]
+                        })
+                    },
+                    {
+                        id: 'mt-list-trackings',
+                        label: 'List Tracking Requests',
+                        method: 'GET',
+                        path: 'tracking-requests',
+                        service: 'container',
+                        note: 'List all tracking requests. Filter by status (active, pending, failed) or reference number.',
+                        payload: () => ({})
+                    },
+                    {
+                        id: 'mt-get-tracking',
+                        label: 'Get Tracking Request',
+                        method: 'GET',
+                        path: 'tracking-requests/{id}',
+                        service: 'container',
+                        pathParams: ['id'],
+                        note: 'Get details of a specific tracking request by its ID.',
+                        payload: () => ({})
+                    },
+                    {
+                        id: 'mt-archive',
+                        label: 'Archive Tracking Requests',
+                        method: 'POST',
+                        path: 'tracking-requests/archive',
+                        service: 'container',
+                        note: 'Archive (or un-archive) tracking requests by ID.',
+                        payload: () => ({data: [{type: 'tracking_request', id: ''}], archive: true})
+                    },
+                ]
+            },
+            {
+                id: 'mt-shipments', label: 'Shipments', dot: '#8b5cf6', eps: [
+                    {
+                        id: 'mt-list-shipments',
+                        label: 'List Shipments',
+                        method: 'GET',
+                        path: 'shipments',
+                        service: 'container',
+                        note: 'List all tracked shipments. Supports filtering and pagination.',
+                        payload: () => ({})
+                    },
+                    {
+                        id: 'mt-shipment-summary',
+                        label: 'Shipment Summary',
+                        method: 'GET',
+                        path: 'shipments/{shipmentId}',
+                        service: 'container',
+                        pathParams: ['shipmentId'],
+                        note: 'Get tracking summary for a shipment including current vessel position, POL/POD, and insights.',
+                        payload: () => ({})
+                    },
+                    {
+                        id: 'mt-milestones',
+                        label: 'Shipment Milestones (Timeline)',
+                        method: 'GET',
+                        path: 'shipments/{shipmentId}/transportation-timeline',
+                        service: 'container',
+                        pathParams: ['shipmentId'],
+                        note: 'Get the full transportation timeline with equipment events (load/unload) and transport events (departure/arrival).',
+                        payload: () => ({})
+                    },
+                ]
+            },
+            {
+                id: 'mt-intelligence', label: 'Container Intelligence', dot: '#10b981', eps: [
+                    {
+                        id: 'mt-congestions',
+                        label: 'Terminal Congestions',
+                        method: 'GET',
+                        path: 'terminal-congestions',
+                        service: 'container',
+                        note: 'Get live terminal congestion data including congestion index, vessel queues, average wait/stay times. Updated every 30 minutes.',
+                        payload: () => ({'page[size]': 10, 'page[number]': 1})
+                    },
+                    {
+                        id: 'mt-shipping-calls',
+                        label: 'Shipping Calls',
+                        method: 'GET',
+                        path: 'shipping/calls',
+                        service: 'container',
+                        note: 'Get insights about container vessel calls at ports. Supports filtering by port UNLOCODE, carrier SCAC, service code, etc.',
+                        payload: () => ({'page[size]': 10, 'page[number]': 1})
+                    },
+                ]
+            },
+            {
+                id: 'mt-context', label: 'Active Data (Context)', dot: '#f59e0b', eps: [
+                    {
+                        id: 'mt-active-trackings',
+                        label: 'Active Container Trackings',
+                        method: 'GET',
+                        endpoint: '__internal__/active-trackings',
+                        service: 'internal',
+                        note: 'Loads active/pending container tracking records from our database — useful for getting real shipmentIds and tracking request IDs to use in requests above.',
+                        payload: () => ({})
+                    },
+                    {
+                        id: 'mt-active-vessels',
+                        label: 'Active Vessel Trips',
+                        method: 'GET',
+                        endpoint: '__internal__/active-vessels',
+                        service: 'internal',
+                        note: 'Loads trips currently on-vessel or in-transshipment from our database — provides real vessel IMOs for AIS lookups.',
+                        payload: () => ({})
+                    },
+                ]
+            },
+        ];
 
-        const colorJson = (s) =>
-            s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-                .replace(/("(?:\\u[\dA-Fa-f]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(?:true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/g, (m) => {
-                    if (/^"/.test(m)) return `<span class="${/:$/.test(m) ? 'jk' : 'js'}">${m}</span>`;
-                    if (/true|false/.test(m)) return `<span class="jb">${m}</span>`;
-                    if (/null/.test(m)) return `<span class="jz">${m}</span>`;
-                    return `<span class="jn">${m}</span>`;
-                });
-
-        const METHOD_CLS = {
-            GET: 'text-emerald-400 bg-emerald-500/20 border border-emerald-500/30',
-            POST: 'text-sky-400 bg-sky-500/20 border border-sky-500/30',
-        };
-
-        const statusCls = (s) => {
-            if (!s) return 'text-slate-400 bg-slate-800';
-            if (s >= 200 && s < 300) return 'text-emerald-400 bg-emerald-500/20 border border-emerald-500/30';
-            if (s >= 400 && s < 500) return 'text-amber-400 bg-amber-500/20 border border-amber-500/30';
-            return 'text-red-400 bg-red-500/20 border border-red-500/30';
-        };
-
-        const initials = (name = '') =>
-            name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
-
-        /* ══════════════════════════════════════════════════════════════════════════
+        /* ══════════════════════════════════════════════════════════════════════
            AUTH SCREENS
-        ══════════════════════════════════════════════════════════════════════════ */
+        ══════════════════════════════════════════════════════════════════════ */
 
         function LoginScreen({onLogin}) {
             const [email, setEmail] = useState('');
@@ -569,12 +717,11 @@
                     const r = await fetch(`${API}/auth/login`, {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json', Accept: 'application/json'},
-                        body: JSON.stringify({email, password}),
+                        body: JSON.stringify({email, password})
                     });
                     const data = await r.json();
-                    if (!r.ok) {
-                        setError(data.message || 'Invalid credentials.');
-                    } else {
+                    if (!r.ok) setError(data.message || 'Invalid credentials.');
+                    else {
                         saveToken(data.token);
                         onLogin(data.token, data.user);
                     }
@@ -584,15 +731,13 @@
                     setLoading(false);
                 }
             };
-
             const onKey = (e) => e.key === 'Enter' && submit();
 
             return (
                 <div
-                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#0f172a' }}>
+                    style={{ display:'flex', alignItems:'center', justifyContent:'center', minHeight:'100vh', background:'#0f172a' }}>
                     <div
-                        style={{ width: 380 }} className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden">
-                        {/* Card header */}
+                        style={{ width:380 }} className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden">
                         <div className="px-8 pt-8 pb-6 border-b border-slate-700/60">
                             <div className="flex items-center gap-3 mb-1">
                                 <div
@@ -604,13 +749,11 @@
                                     </svg>
                                 </div>
                                 <div>
-                                    <p className="text-base font-bold text-slate-100 leading-tight">Sepio Inspector</p>
-                                    <p className="text-xs text-slate-500">Developer Tool</p>
+                                    <p className="text-base font-bold text-slate-100 leading-tight">API Inspector</p>
+                                    <p className="text-xs text-slate-500">Sepio · MarineTraffic</p>
                                 </div>
                             </div>
                         </div>
-
-                        {/* Form */}
                         <div className="px-8 py-6 space-y-4">
                             {error && (
                                 <div
@@ -624,37 +767,27 @@
                                     <p className="text-sm text-red-300">{error}</p>
                                 </div>
                             )}
-
                             <div>
                                 <label
                                     className="block text-xs font-semibold text-slate-400 mb-1.5 tracking-wide uppercase">Email</label>
-                                <input
-                                    type="email" value={email} onChange={e => setEmail(e.target.value)}
-                                    onKeyDown={onKey}
-                                    placeholder="you@company.com" autoFocus
-                                    className="w-full bg-slate-800 border border-slate-600 rounded-lg text-sm text-slate-100 px-3.5 py-2.5 placeholder:text-slate-600 focus:border-indigo-500 transition-colors outline-none"
-                                    style={{ fontFamily: 'Inter, sans-serif' }}
-                                />
+                                <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+                                       onKeyDown={onKey} placeholder="you@company.com" autoFocus
+                                       className="w-full bg-slate-800 border border-slate-600 rounded-lg text-sm text-slate-100 px-3.5 py-2.5 placeholder:text-slate-600 focus:border-indigo-500 transition-colors outline-none"
+                                       style={{fontFamily:'Inter, sans-serif'}}/>
                             </div>
-
                             <div>
                                 <label
                                     className="block text-xs font-semibold text-slate-400 mb-1.5 tracking-wide uppercase">Password</label>
                                 <div className="relative">
-                                    <input
-                                        type={showPw ? 'text' : 'password'} value={password}
-                                        onChange={e => setPassword(e.target.value)} onKeyDown={onKey}
-                                        placeholder="••••••••"
-                                        className="w-full bg-slate-800 border border-slate-600 rounded-lg text-sm text-slate-100 px-3.5 py-2.5 pr-10 placeholder:text-slate-600 focus:border-indigo-500 transition-colors outline-none"
-                                        style={{ fontFamily: 'Inter, sans-serif' }}
-                                    />
-                                    <button
-                                        onClick={() => setShowPw(p => !p)} tabIndex={-1}
-                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
-                                    >
-                                        {showPw
-                                            ? <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24"
-                                                   stroke="currentColor">
+                                    <input type={showPw ? 'text' : 'password'} value={password}
+                                           onChange={e => setPassword(e.target.value)} onKeyDown={onKey}
+                                           placeholder="••••••••"
+                                           className="w-full bg-slate-800 border border-slate-600 rounded-lg text-sm text-slate-100 px-3.5 py-2.5 pr-10 placeholder:text-slate-600 focus:border-indigo-500 transition-colors outline-none"
+                                           style={{fontFamily:'Inter, sans-serif'}}/>
+                                    <button onClick={() => setShowPw(p => !p)} tabIndex={-1}
+                                            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors">
+                                        {showPw ? <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24"
+                                                       stroke="currentColor">
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                                                       d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18"/>
                                             </svg>
@@ -664,31 +797,21 @@
                                                       d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                                                       d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
-                                            </svg>
-                                        }
+                                            </svg>}
                                     </button>
                                 </div>
                             </div>
-
-                            <button
-                                onClick={submit} disabled={loading}
-                                className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold transition-all mt-2 ${
-                                    loading ? 'bg-indigo-700 text-indigo-300 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-900/40'
-                                }`}
-                            >
-                                {loading
-                                    ? <>
-                                        <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                                            <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"
-                                                    className="opacity-20"/>
-                                            <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.4 0 0 5.4 0 12h4z"/>
-                                        </svg>
-                                        Signing in…</>
-                                    : 'Sign In →'
-                                }
+                            <button onClick={submit} disabled={loading}
+                                    className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold transition-all mt-2 ${loading ? 'bg-indigo-700 text-indigo-300 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-900/40'}`}>
+                                {loading ? <>
+                                    <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                        <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"
+                                                className="opacity-20"/>
+                                        <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.4 0 0 5.4 0 12h4z"/>
+                                    </svg>
+                                    Signing in…</> : 'Sign In →'}
                             </button>
                         </div>
-
                         <div className="px-8 py-3 bg-slate-950/40 border-t border-slate-700/60">
                             <p className="mono text-xs text-slate-600 text-center">⚠ Development tool ·
                                 Non-production</p>
@@ -701,7 +824,7 @@
         function LoadingScreen() {
             return (
                 <div
-                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#0f172a' }}>
+                    style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', background:'#0f172a' }}>
                     <svg className="w-8 h-8 animate-spin text-indigo-500" fill="none" viewBox="0 0 24 24">
                         <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" className="opacity-20"/>
                         <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.4 0 0 5.4 0 12h4z"/>
@@ -710,42 +833,65 @@
             );
         }
 
-        function PermissionDenied({onLogout}) {
+        /* ══════════════════════════════════════════════════════════════════════
+           SERVICE SWITCHER (header centre)
+        ══════════════════════════════════════════════════════════════════════ */
+
+        function ServiceSwitcher({active, onChange, canSepio, canMT}) {
+            const services = [
+                {id: 'sepio', label: 'Sepio', icon: '🔐', color: 'from-violet-500 to-purple-600', enabled: canSepio},
+                {
+                    id: 'marinetraffic',
+                    label: 'MarineTraffic',
+                    icon: '🚢',
+                    color: 'from-blue-500 to-cyan-500',
+                    enabled: canMT
+                },
+            ].filter(s => s.enabled);
+
+            if (services.length <= 1) return null;
+
             return (
-                <div
-                    style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#0f172a', gap: 16 }}>
-                    <div
-                        className="w-14 h-14 rounded-2xl bg-red-500/10 border border-red-500/30 flex items-center justify-center">
-                        <svg className="w-7 h-7 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                  d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
-                        </svg>
-                    </div>
-                    <div className="text-center">
-                        <p className="text-slate-100 font-semibold text-base">Access Denied</p>
-                        <p className="text-slate-500 text-sm mt-1">You do not have permission to <span
-                            className="mono text-slate-400">Inspect Sepio APIs</span>.</p>
-                    </div>
-                    <button onClick={onLogout}
-                            className="mt-2 px-5 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 text-sm font-medium rounded-lg transition-colors">
-                        Sign Out
-                    </button>
+                <div className="flex items-center bg-slate-800 border border-slate-700 rounded-xl p-1 gap-1">
+                    {services.map(svc => (
+                        <button
+                            key={svc.id}
+                            onClick={() => onChange(svc.id)}
+                            className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-semibold transition-all ${
+                                active === svc.id
+                                    ? `bg-gradient-to-r ${svc.color} text-white shadow-lg`
+                                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/60'
+                            }`}
+                        >
+                            <span>{svc.icon}</span>
+                            <span>{svc.label}</span>
+                        </button>
+                    ))}
                 </div>
             );
         }
 
-        /* ══════════════════════════════════════════════════════════════════════════
-           CUSTOMER SELECTOR  (searchable combobox, status in options)
-        ══════════════════════════════════════════════════════════════════════════ */
+        /* ══════════════════════════════════════════════════════════════════════
+           CUSTOMER SELECTOR (Sepio only)
+        ══════════════════════════════════════════════════════════════════════ */
 
         const STATUS_META = (s = '') => {
             const v = s.toLowerCase();
-            if (v.includes('complet') || v.includes('verif') || v.includes('active'))
-                return {dot: '#34d399', label: s, pill: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30'};
-            if (v.includes('pending') || v.includes('review'))
-                return {dot: '#fbbf24', label: s, pill: 'text-amber-400 bg-amber-500/10 border-amber-500/30'};
-            if (v.includes('reject') || v.includes('fail'))
-                return {dot: '#f87171', label: s, pill: 'text-red-400 bg-red-500/10 border-red-500/30'};
+            if (v.includes('complet') || v.includes('verif') || v.includes('active')) return {
+                dot: '#34d399',
+                label: s,
+                pill: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30'
+            };
+            if (v.includes('pending') || v.includes('review')) return {
+                dot: '#fbbf24',
+                label: s,
+                pill: 'text-amber-400 bg-amber-500/10 border-amber-500/30'
+            };
+            if (v.includes('reject') || v.includes('fail')) return {
+                dot: '#f87171',
+                label: s,
+                pill: 'text-red-400 bg-red-500/10 border-red-500/30'
+            };
             return {dot: '#64748b', label: s || 'unknown', pill: 'text-slate-400 bg-slate-700/50 border-slate-600'};
         };
 
@@ -757,12 +903,8 @@
             const inputRef = useRef(null);
 
             const cust = customers.find(c => String(c.id) === String(custId)) || null;
+            const filtered = query.trim() ? customers.filter(c => c.company_name.toLowerCase().includes(query.toLowerCase())) : customers;
 
-            const filtered = query.trim()
-                ? customers.filter(c => c.company_name.toLowerCase().includes(query.toLowerCase()))
-                : customers;
-
-            // Close on outside click
             useEffect(() => {
                 if (!open && !infoOpen) return;
                 const h = (e) => {
@@ -780,13 +922,11 @@
                 setQuery('');
                 setTimeout(() => inputRef.current?.focus(), 0);
             };
-
             const select = (id) => {
                 onCustChange(id);
                 setOpen(false);
                 setQuery('');
             };
-
             const clear = (e) => {
                 e.stopPropagation();
                 onCustChange('');
@@ -795,132 +935,71 @@
             };
 
             return (
-                <div ref={wrapRef} style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 8 }}>
-
-                    {/* ── Trigger / Search box ─────────────────────────────────── */}
-                    <div
-                        onClick={!open ? openDropdown : undefined}
-                        className={`flex items-center gap-2 bg-slate-800 border rounded-lg transition-all cursor-pointer ${
-                            open ? 'border-indigo-500 ring-1 ring-indigo-500/30' : 'border-slate-700 hover:border-slate-500'
-                        }`}
-                        style={{ minWidth: 220, maxWidth: 300, height: 34, padding: '0 10px' }}
-                    >
-                        {/* Status dot — only when a customer is selected and dropdown closed */}
-                        {/* cust && !open && (
-                            <span
-                                className="shrink-0 w-2 h-2 rounded-full"
-                                style={{ background: STATUS_META(cust.onboarding_status).dot }}
-                            />
-                        ) */}
-
+                <div ref={wrapRef} style={{ position:'relative', display:'flex', alignItems:'center', gap:8 }}>
+                    <div onClick={!open ? openDropdown : undefined}
+                         className={`flex items-center gap-2 bg-slate-800 border rounded-lg transition-all cursor-pointer ${open ? 'border-indigo-500 ring-1 ring-indigo-500/30' : 'border-slate-700 hover:border-slate-500'}`}
+                         style={{ minWidth:220, maxWidth:300, height:34, padding:'0 10px' }}>
                         {open ? (
-                            <input
-                                ref={inputRef}
-                                value={query}
-                                onChange={e => setQuery(e.target.value)}
-                                onKeyDown={e => {
-                                    if (e.key === 'Escape') {
-                                        setOpen(false);
-                                        setQuery('');
-                                    }
-                                    if (e.key === 'Enter' && filtered.length === 1) select(String(filtered[0].id));
-                                }}
-                                placeholder="Type to search…"
-                                className="flex-1 bg-transparent text-sm text-slate-100 placeholder:text-slate-600 outline-none min-w-0"
-                                style={{ fontFamily: 'Inter, sans-serif' }}
-                                    onClick={e => e.stopPropagation()}
-                            />
+                            <input ref={inputRef} value={query} onChange={e => setQuery(e.target.value)}
+                                   onKeyDown={e => {
+                                       if (e.key === 'Escape') {
+                                           setOpen(false);
+                                           setQuery('');
+                                       }
+                                       if (e.key === 'Enter' && filtered.length === 1) select(String(filtered[0].id));
+                                   }} placeholder="Type to search…"
+                                   className="flex-1 bg-transparent text-sm text-slate-100 placeholder:text-slate-600 outline-none min-w-0"
+                                   style={{fontFamily:'Inter, sans-serif'}} onClick={e => e.stopPropagation()}/>
                         ) : (
                             <span
                                 className={`flex-1 text-sm truncate leading-none ${cust ? 'text-slate-100' : 'text-slate-500'}`}
-                                style={{ fontFamily: 'Inter, sans-serif' }}>
-                        {cust ? cust.company_name : '— Select Customer —'}
-                    </span>
+                                style={{fontFamily:'Inter, sans-serif'}}>{cust ? cust.company_name : '— Select Customer —'}</span>
                         )}
-
                         <span className="flex items-center gap-1 shrink-0 ml-1">
-                    {cust && !open && (
-                        <button
-                            onClick={clear}
-                            className="text-slate-600 hover:text-slate-300 transition-colors leading-none"
-                            title="Clear selection"
-                        >
-                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5}
-                                      d="M6 18L18 6M6 6l12 12"/>
-                            </svg>
-                        </button>
-                    )}
+                    {cust && !open && <button onClick={clear}
+                                              className="text-slate-600 hover:text-slate-300 transition-colors leading-none"
+                                              title="Clear">
+                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5}
+                                  d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>}
                             <svg
                                 className={`w-3.5 h-3.5 text-slate-500 transition-transform ${open ? 'rotate-180' : ''}`}
-                                fill="none" viewBox="0 0 24 24" stroke="currentColor"
-                            >
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7"/>
-                    </svg>
+                                fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round"
+                                                                                            strokeLinejoin="round"
+                                                                                            strokeWidth={2}
+                                                                                            d="M19 9l-7 7-7-7"/></svg>
                 </span>
                     </div>
-
-                    {/* ── Info button (only when customer selected) ────────────── */}
                     {cust && !open && (
-                        <button
-                            onClick={() => setInfoOpen(p => !p)}
-                            title="Customer details"
-                            className={`w-[34px] h-[34px] flex items-center justify-center rounded-lg border transition-all text-xs font-bold shrink-0 ${
-                                infoOpen
-                                    ? 'bg-indigo-600 border-indigo-500 text-white'
-                                    : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-indigo-500/60 hover:text-indigo-400'
-                            }`}
-                        >ℹ</button>
+                        <button onClick={() => setInfoOpen(p => !p)} title="Customer details"
+                                className={`w-[34px] h-[34px] flex items-center justify-center rounded-lg border transition-all text-xs font-bold shrink-0 ${infoOpen ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-indigo-500/60 hover:text-indigo-400'}`}>ℹ</button>
                     )}
-
-                    {/* ── Dropdown list ────────────────────────────────────────── */}
                     {open && (
                         <div
                             className="absolute right-0 z-50 bg-slate-800 border border-slate-600 rounded-xl shadow-2xl overflow-hidden"
-                            style={{ top: 'calc(100% + 6px)', minWidth: 280, maxWidth: 360 }}
-                        >
+                            style={{ top:'calc(100% + 6px)', minWidth:280, maxWidth:360 }}>
                             {filtered.length === 0 ? (
                                 <div className="px-4 py-3 text-sm text-slate-500 italic">No customers match</div>
                             ) : (
-                                <div style={{ maxHeight: 280, overflowY: 'auto' }}>
+                                <div style={{ maxHeight:280, overflowY:'auto' }}>
                                     {filtered.map(c => {
                                         const sm = STATUS_META(c.onboarding_status);
                                         const isSel = String(c.id) === String(custId);
                                         return (
-                                            <button
-                                                key={c.id}
-                                                onClick={() => select(String(c.id))}
-                                                className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${
-                                                    isSel
-                                                        ? 'bg-indigo-500/15 text-indigo-200'
-                                                        : 'text-slate-200 hover:bg-slate-700/60'
-                                                }`}
-                                            >
-                                                {/* Status dot */}
-                                                {/* <span
-                                                    className="shrink-0 w-1.5 h-1.5 rounded-full mt-px"
-                                                    style={{ background: sm.dot }}
-                                                    /> */}
-
-                                                {/* Company name */}
+                                            <button key={c.id} onClick={() => select(String(c.id))}
+                                                    className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${isSel ? 'bg-indigo-500/15 text-indigo-200' : 'text-slate-200 hover:bg-slate-700/60'}`}>
                                                 <span className="flex-1 text-sm truncate leading-tight"
-                                                      style={{ fontFamily: 'Inter, sans-serif' }}>
-                                            {c.company_name}
-                                        </span>
-
-                                                {/* Status pill */}
+                                                      style={{fontFamily:'Inter, sans-serif'}}>{c.company_name}</span>
                                                 <span
-                                                    className={`shrink-0 mono text-[10px] font-semibold px-1.5 py-0.5 rounded border ${sm.pill}`}>
-                                            {sm.label || 'unknown'}
-                                        </span>
-
-                                                {isSel && (
+                                                    className={`shrink-0 mono text-[10px] font-semibold px-1.5 py-0.5 rounded border ${sm.pill}`}>{sm.label || 'unknown'}</span>
+                                                {isSel &&
                                                     <svg className="w-3.5 h-3.5 text-indigo-400 shrink-0" fill="none"
                                                          viewBox="0 0 24 24" stroke="currentColor">
                                                         <path strokeLinecap="round" strokeLinejoin="round"
                                                               strokeWidth={2.5} d="M5 13l4 4L19 7"/>
-                                                    </svg>
-                                                )}
+                                                    </svg>}
                                             </button>
                                         );
                                     })}
@@ -928,33 +1007,22 @@
                             )}
                         </div>
                     )}
-
-                    {/* ── Customer info popover ────────────────────────────────── */}
                     {infoOpen && cust && (
                         <div
                             className="absolute right-0 z-50 w-72 bg-slate-800 border border-slate-600 rounded-xl shadow-2xl overflow-hidden"
-                            style={{ top: 'calc(100% + 6px)' }}
-                        >
+                            style={{ top:'calc(100% + 6px)' }}>
                             <div
                                 className="px-4 py-3 border-b border-slate-700 bg-slate-900/60 flex items-center gap-2.5">
-                        <span
-                            className="w-2 h-2 rounded-full shrink-0"
-                            style={{ background: STATUS_META(cust.onboarding_status).dot }}
-                        />
+                                <span className="w-2 h-2 rounded-full shrink-0"
+                                      style={{ background: STATUS_META(cust.onboarding_status).dot }}/>
                                 <div className="min-w-0">
                                     <p className="text-sm font-semibold text-slate-100 truncate leading-tight">{cust.company_name}</p>
                                     <p className="mono text-[10px] text-slate-500 truncate">{cust.primary_contact_email || cust.email}</p>
                                 </div>
                             </div>
                             <div className="divide-y divide-slate-700/50">
-                                {[
-                                    ['Sepio ID', cust.sepio_company_id ||
-                                    <span className="text-red-400">not registered</span>],
-                                    ['Status', cust.onboarding_status || '—'],
-                                    ['IEC', cust.iec_number || '—'],
-                                    ['GST', cust.gst_number || '—'],
-                                    ['Contact', cust.primary_contact_email || cust.email || '—'],
-                                ].map(([k, v]) => (
+                                {[['Sepio ID', cust.sepio_company_id || <span
+                                    className="text-red-400">not registered</span>], ['Status', cust.onboarding_status || '—'], ['IEC', cust.iec_number || '—'], ['GST', cust.gst_number || '—'], ['Contact', cust.primary_contact_email || cust.email || '—']].map(([k, v]) => (
                                     <div key={k} className="flex items-center justify-between px-4 py-2">
                                         <span className="text-xs text-slate-500 font-medium w-16 shrink-0">{k}</span>
                                         <span
@@ -968,26 +1036,74 @@
             );
         }
 
-        /* ══════════════════════════════════════════════════════════════════════════
-           SIDEBAR
-        ══════════════════════════════════════════════════════════════════════════ */
+        /* ══════════════════════════════════════════════════════════════════════
+           PATH PARAM EDITOR (for MT endpoints with {id} in path)
+        ══════════════════════════════════════════════════════════════════════ */
 
-        function Sidebar({selId, onSelect, user, onLogout}) {
-            const [open, setOpen] = useState(() => Object.fromEntries(GROUPS.map(g => [g.id, false])));
+        function PathParamEditor({ep, pathValues, setPathValues}) {
+            if (!ep?.pathParams?.length) return null;
+            return (
+                <div className="px-4 py-3 border-b border-slate-700 bg-slate-950/30 shrink-0">
+                    <p className="mono text-[10px] tracking-widest uppercase text-slate-500 font-semibold mb-2">Path
+                        Parameters</p>
+                    <div className="flex flex-wrap gap-3">
+                        {ep.pathParams.map(param => (
+                            <div key={param} className="flex items-center gap-2">
+                                <span className="mono text-xs text-slate-400 shrink-0">{`{${param}}`}</span>
+                                <input
+                                    value={pathValues[param] || ''}
+                                    onChange={e => setPathValues(prev => ({...prev, [param]: e.target.value}))}
+                                    placeholder={`Enter ${param}…`}
+                                    className="bg-slate-800 border border-slate-600 rounded-lg text-xs text-slate-100 px-2.5 py-1.5 placeholder:text-slate-600 focus:border-indigo-500 transition-colors outline-none mono w-52"
+                                />
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        }
+
+        /* ══════════════════════════════════════════════════════════════════════
+           SIDEBAR
+        ══════════════════════════════════════════════════════════════════════ */
+
+        function Sidebar({service, selId, onSelect, user, onLogout}) {
+            const groups = service === 'sepio' ? SEPIO_GROUPS : MT_GROUPS;
+            const [open, setOpen] = useState(() => {
+                const init = {};
+                groups.forEach(g => {
+                    init[g.id] = false;
+                });
+                return init;
+            });
+
+            // Reset open state when service changes
+            useEffect(() => {
+                const init = {};
+                groups.forEach(g => {
+                    init[g.id] = false;
+                });
+                setOpen(init);
+            }, [service]);
+
+            const serviceColor = service === 'sepio' ? '#8b5cf6' : '#3b82f6';
+            const serviceName = service === 'sepio' ? 'Sepio APIs' : 'MarineTraffic APIs';
 
             return (
                 <aside
-                    style={{ width: 256, flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
-                        className="border-r border-slate-700 bg-slate-900">
-
-                    {/* Endpoint list */}
+                    style={{ width:256, flexShrink:0, display:'flex', flexDirection:'column', overflow:'hidden' }} className="border-r border-slate-700 bg-slate-900">
+                    <div className="px-4 py-2.5 border-b border-slate-700/60 bg-slate-950/30 shrink-0">
+                <span className="flex items-center gap-2 text-xs font-semibold tracking-wide uppercase"
+                      style={{ color: serviceColor }}>
+                    <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: serviceColor }}/>
+                    {serviceName}
+                </span>
+                    </div>
                     <nav className="flex-1 overflow-y-auto py-2">
-                        {GROUPS.map(g => (
+                        {groups.map(g => (
                             <div key={g.id} className="mb-0.5">
-                                <button
-                                    onClick={() => setOpen(p => ({...p, [g.id]: !p[g.id]}))}
-                                    className="w-full flex items-center justify-between px-4 py-2 text-slate-400 hover:text-slate-100 hover:bg-slate-800/60 transition-colors"
-                                >
+                                <button onClick={() => setOpen(p => ({...p, [g.id]: !p[g.id]}))}
+                                        className="w-full flex items-center justify-between px-4 py-2 text-slate-400 hover:text-slate-100 hover:bg-slate-800/60 transition-colors">
                             <span className="flex items-center gap-2 text-xs font-semibold tracking-wide uppercase">
                                 <span className="inline-block w-2 h-2 rounded-full" style={{ background: g.dot }}/>
                                 {g.label}
@@ -998,43 +1114,29 @@
                                               d="M19 9l-7 7-7-7"/>
                                     </svg>
                                 </button>
-
                                 {open[g.id] && g.eps.map(ep => (
-                                    <button
-                                        key={ep.id} onClick={() => onSelect(ep)} title={ep.path}
-                                        className={`w-full text-left flex items-center gap-2 pl-5 pr-3 py-2 text-xs transition-all border-l-2 ${
-                                            selId === ep.id
-                                                ? 'text-indigo-300 bg-indigo-500/15 border-indigo-400'
-                                                : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/50 border-transparent hover:border-slate-600'
-                                        }`}
-                                    >
-                                <span
-                                    className={`shrink-0 mono text-[10px] font-bold px-1.5 py-0.5 rounded ${METHOD_CLS[ep.method]}`}>
-                                    {ep.method}
-                                </span>
+                                    <button key={ep.id} onClick={() => onSelect(ep)} title={ep.path || ep.endpoint}
+                                            className={`w-full text-left flex items-center gap-2 pl-5 pr-3 py-2 text-xs transition-all border-l-2 ${selId === ep.id ? 'text-indigo-300 bg-indigo-500/15 border-indigo-400' : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/50 border-transparent hover:border-slate-600'}`}>
+                                        <span
+                                            className={`shrink-0 mono text-[10px] font-bold px-1.5 py-0.5 rounded ${METHOD_CLS[ep.method]}`}>{ep.method}</span>
                                         <span className="truncate leading-tight">{ep.label}</span>
                                         {ep.file && <span className="ml-auto opacity-40 text-xs">📎</span>}
+                                        {ep.service === 'internal' &&
+                                            <span className="ml-auto opacity-40 text-xs">db</span>}
                                     </button>
                                 ))}
                             </div>
                         ))}
                     </nav>
-
-                    {/* User footer */}
                     <div className="border-t border-slate-700 px-3 py-3 bg-slate-900/80 flex items-center gap-2.5">
                         <div
-                            className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-xs font-bold text-white shrink-0 select-none">
-                            {initials(user?.name)}
-                        </div>
+                            className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-xs font-bold text-white shrink-0 select-none">{initials(user?.name)}</div>
                         <div className="flex-1 min-w-0">
                             <p className="text-xs font-semibold text-slate-200 truncate leading-tight">{user?.name}</p>
                             <p className="mono text-[10px] text-slate-500 truncate leading-tight">{user?.email}</p>
                         </div>
-                        <button
-                            onClick={onLogout}
-                            title="Sign out"
-                            className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 border border-transparent hover:border-red-500/30 transition-all"
-                        >
+                        <button onClick={onLogout} title="Sign out"
+                                className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 border border-transparent hover:border-red-500/30 transition-all">
                             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                                       d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
@@ -1045,72 +1147,64 @@
             );
         }
 
-        /* ══════════════════════════════════════════════════════════════════════════
-           REQUEST BAR  (method + URL + send button)
-        ══════════════════════════════════════════════════════════════════════════ */
+        /* ══════════════════════════════════════════════════════════════════════
+           REQUEST BAR
+        ══════════════════════════════════════════════════════════════════════ */
 
-        function RequestBar({ep, cust, loading, onSend}) {
-            const canSend = ep && !loading && !(ep.needsCust && !cust) && !(ep.file);
-            // Note: file check is loose here — actual block is in the payload panel
-            // We allow send unless definitively blocked
-            const blocked = ep && ((ep.needsCust && !cust));
+        function RequestBar({service, ep, pathValues, cust, loading, onSend}) {
+            const blocked = ep && service === 'sepio' && ep.needsCust && !cust;
+            const resolvedPath = ep ? (ep.path || ep.endpoint || '') : '';
+            const displayPath = ep?.pathParams
+                ? ep.pathParams.reduce((p, k) => p.replace(`{${k}}`, pathValues[k] || `{${k}}`), resolvedPath)
+                : resolvedPath;
+
+            const baseLabel = service === 'sepio'
+                ? SEPIO_BASE
+                : (ep?.service === 'vessel' ? MT_VES + '/exportvessel/' : MT_CONT + '/');
 
             return (
                 <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-700 bg-slate-900/90 shrink-0">
-                    {ep ? (<>
-                <span className={`shrink-0 mono text-xs font-bold px-2.5 py-1 rounded ${METHOD_CLS[ep.method]}`}>
-                    {ep.method}
-                </span>
-                        <div
-                            className="flex-1 min-w-0 mono text-sm rounded-lg bg-slate-950/60 border border-slate-700 px-3 py-2 truncate text-slate-300">
-                            {ep.internal
-                                ? <span className="text-amber-400 font-medium">internal · refresh-token</span>
-                                : <><span className="text-slate-600">{BASE}</span><span>{ep.path}</span></>
-                            }
-                        </div>
-                        {ep.auth && (
+                    {ep ? (
+                        <>
                             <span
-                                className="shrink-0 mono text-xs text-amber-400 bg-amber-500/20 border border-amber-500/30 px-2.5 py-1 rounded font-bold tracking-wide">JWT</span>
-                        )}
-                    </>) : (
+                                className={`shrink-0 mono text-xs font-bold px-2.5 py-1 rounded ${METHOD_CLS[ep.method]}`}>{ep.method}</span>
+                            <div
+                                className="flex-1 min-w-0 mono text-sm rounded-lg bg-slate-950/60 border border-slate-700 px-3 py-2 truncate text-slate-300">
+                                {ep.service === 'internal'
+                                    ? <span
+                                        className="text-amber-400 font-medium">internal · {ep.endpoint?.replace('__internal__/', '')}</span>
+                                    : <><span className="text-slate-600">{baseLabel}</span><span>{displayPath}</span></>
+                                }
+                            </div>
+                            {ep.auth && <span
+                                className="shrink-0 mono text-xs text-amber-400 bg-amber-500/20 border border-amber-500/30 px-2.5 py-1 rounded font-bold tracking-wide">JWT</span>}
+                            {ep.service === 'container' && <span
+                                className="shrink-0 mono text-xs text-cyan-400 bg-cyan-500/20 border border-cyan-500/30 px-2.5 py-1 rounded font-bold tracking-wide">API-KEY</span>}
+                        </>
+                    ) : (
                         <div className="flex-1 mono text-sm text-slate-600 italic">Select an endpoint from the
                             sidebar</div>
                     )}
-
-                    <button
-                        onClick={onSend}
-                        disabled={!ep || loading || blocked}
-                        className={`shrink-0 flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-semibold transition-all ${
-                            ep && !loading && !blocked
-                                ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-900/30'
-                                : 'bg-slate-700/60 text-slate-600 cursor-not-allowed'
-                        }`}
-                    >
-                        {loading
-                            ? <>
-                                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"
-                                            className="opacity-20"/>
-                                    <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.4 0 0 5.4 0 12h4z"/>
-                                </svg>
-                                Sending…</>
-                            : 'Send →'
-                        }
+                    <button onClick={onSend} disabled={!ep || loading || blocked}
+                            className={`shrink-0 flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-semibold transition-all ${ep && !loading && !blocked ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-900/30' : 'bg-slate-700/60 text-slate-600 cursor-not-allowed'}`}>
+                        {loading ? <>
+                            <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"
+                                        className="opacity-20"/>
+                                <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.4 0 0 5.4 0 12h4z"/>
+                            </svg>
+                            Sending…</> : 'Send →'}
                     </button>
                 </div>
             );
         }
 
-        /* ── Info bar (notes / warnings) ──────────────────────────────────────── */
-        function InfoBar({ep, cust, file}) {
+        function InfoBar({service, ep, cust, file}) {
             if (!ep) return null;
-            const warnCust = ep.needsCust && !cust;
-            const warnFile = ep.file && !file;
-
             return (
                 <div className="px-4 py-2.5 border-b border-slate-700 bg-slate-900/50 shrink-0 space-y-1.5">
                     <p className="text-sm text-slate-400 leading-relaxed">{ep.note}</p>
-                    {warnCust && (
+                    {service === 'sepio' && ep.needsCust && !cust && (
                         <p className="text-xs text-amber-400 flex items-center gap-1.5">
                             <svg className="w-3.5 h-3.5 shrink-0" fill="currentColor" viewBox="0 0 20 20">
                                 <path fillRule="evenodd"
@@ -1120,7 +1214,7 @@
                             Select a customer — JWT authentication required
                         </p>
                     )}
-                    {warnFile && (
+                    {ep.file && !file && (
                         <p className="text-xs text-amber-400 flex items-center gap-1.5">
                             <svg className="w-3.5 h-3.5 shrink-0" fill="currentColor" viewBox="0 0 20 20">
                                 <path fillRule="evenodd"
@@ -1134,9 +1228,9 @@
             );
         }
 
-        /* ══════════════════════════════════════════════════════════════════════════
+        /* ══════════════════════════════════════════════════════════════════════
            REQUEST PAYLOAD PANEL
-        ══════════════════════════════════════════════════════════════════════════ */
+        ══════════════════════════════════════════════════════════════════════ */
 
         function RequestPayload({ep, payload, setPayload, file, setFile}) {
             if (!ep) {
@@ -1150,21 +1244,17 @@
                     </div>
                 );
             }
-
-            if (ep.internal) {
+            if (ep.service === 'internal') {
                 return (
                     <div className="flex-1 flex items-center justify-center px-6 bg-slate-950/20">
-                        <p className="text-sm text-slate-500 text-center leading-relaxed">
-                            Internal action — no request body needed.<br/>
-                            <span className="text-slate-600">Select a customer and press Send.</span>
-                        </p>
+                        <p className="text-sm text-slate-500 text-center leading-relaxed">Internal action — no request
+                            body needed.<br/><span
+                                className="text-slate-600">Press Send to load data from the database.</span></p>
                     </div>
                 );
             }
-
             return (
-                <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
-                    {/* File picker */}
+                <div style={{ display:'flex', flexDirection:'column', flex:1, overflow:'hidden' }}>
                     {ep.file && (
                         <div className="px-4 py-3 border-b border-slate-700 bg-slate-950/30 shrink-0">
                             <p className="mono text-[10px] tracking-widest uppercase text-slate-500 font-semibold mb-2">File
@@ -1179,47 +1269,36 @@
                         </span>
                                 <input type="file" accept=".pdf,.jpg,.jpeg,.png" className="sr-only"
                                        onChange={e => setFile(e.target.files[0] || null)}/>
-                                {file
-                                    ? <span
+                                {file ? <span
                                         className="text-xs text-emerald-400 mono">✓ {file.name} ({(file.size / 1024).toFixed(1)} KB)</span>
-                                    : <span className="text-xs text-slate-600">PDF, JPG, PNG</span>
-                                }
+                                    : <span className="text-xs text-slate-600">PDF, JPG, PNG</span>}
                             </label>
                         </div>
                     )}
-
-                    {/* Payload editor */}
                     <div
-                        style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '12px 16px', gap: 8, minHeight: 0 }}>
+                        style={{ flex:1, display:'flex', flexDirection:'column', padding:'12px 16px', gap:8, minHeight:0 }}>
                         <div className="flex items-center justify-between shrink-0">
                     <span className="mono text-[10px] tracking-widest uppercase text-slate-500 font-semibold">
                         {ep.method === 'GET' ? 'Query Params' : 'Request Body'} · JSON
                     </span>
-                            <button
-                                onClick={() => setPayload(fmtJson(payload))}
-                                className="mono text-xs text-slate-500 hover:text-slate-300 px-2.5 py-1 rounded hover:bg-slate-800 transition-colors"
-                            >Format
+                            <button onClick={() => setPayload(fmtJson(payload))}
+                                    className="mono text-xs text-slate-500 hover:text-slate-300 px-2.5 py-1 rounded hover:bg-slate-800 transition-colors">Format
                             </button>
                         </div>
-                        <textarea
-                            value={payload}
-                            onChange={e => setPayload(e.target.value)}
-                            spellCheck={false}
-                            className="flex-1 w-full bg-slate-950/60 border border-slate-700 rounded-lg px-4 py-3 mono text-sm text-slate-200 focus:border-indigo-500 transition-colors leading-relaxed placeholder:text-slate-700"
-                            placeholder="{}"
-                        />
+                        <textarea value={payload} onChange={e => setPayload(e.target.value)} spellCheck={false}
+                                  className="flex-1 w-full bg-slate-950/60 border border-slate-700 rounded-lg px-4 py-3 mono text-sm text-slate-200 focus:border-indigo-500 transition-colors leading-relaxed placeholder:text-slate-700"
+                                  placeholder="{}"/>
                     </div>
                 </div>
             );
         }
 
-        /* ══════════════════════════════════════════════════════════════════════════
+        /* ══════════════════════════════════════════════════════════════════════
            RESPONSE PANEL
-        ══════════════════════════════════════════════════════════════════════════ */
+        ══════════════════════════════════════════════════════════════════════ */
 
         function ResponsePanel({resp}) {
             const [copied, setCopied] = useState(false);
-
             const copy = () => {
                 try {
                     navigator.clipboard.writeText(JSON.stringify(resp?.body, null, 2));
@@ -1236,51 +1315,39 @@
                     </div>
                 );
             }
-
             const bodyStr = JSON.stringify(resp.body, null, 2);
-
             return (
-                <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
-                    {/* Meta bar */}
+                <div style={{ display:'flex', flexDirection:'column', flex:1, overflow:'hidden' }}>
                     <div
                         className="flex items-center gap-3 px-4 py-2.5 border-b border-slate-700 bg-slate-900/60 shrink-0">
-                <span className={`mono text-xs font-bold px-2.5 py-0.5 rounded ${statusCls(resp.status)}`}>
-                    {resp.status || 'ERR'}
-                </span>
-                        {resp.elapsed_ms !== undefined && (
-                            <span className="mono text-xs text-slate-500">{resp.elapsed_ms} ms</span>
-                        )}
+                        <span
+                            className={`mono text-xs font-bold px-2.5 py-0.5 rounded ${statusCls(resp.status)}`}>{resp.status || 'ERR'}</span>
+                        {resp.elapsed_ms !== undefined &&
+                            <span className="mono text-xs text-slate-500">{resp.elapsed_ms} ms</span>}
                         <span className="mono text-xs text-slate-700">{(bodyStr.length / 1024).toFixed(2)} KB</span>
                         <div className="flex-1"/>
-                        <button
-                            onClick={copy}
-                            className={`mono text-xs px-2.5 py-1 rounded transition-all ${copied ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800'}`}
-                        >
-                            {copied ? '✓ Copied' : 'Copy JSON'}
-                        </button>
+                        <button onClick={copy}
+                                className={`mono text-xs px-2.5 py-1 rounded transition-all ${copied ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800'}`}>{copied ? '✓ Copied' : 'Copy JSON'}</button>
                     </div>
                     <div className="flex-1 overflow-auto p-4">
-                <pre className="mono text-sm leading-relaxed whitespace-pre-wrap break-words"
-                     dangerouslySetInnerHTML={{ __html: colorJson(bodyStr) }}/>
+                        <pre className="mono text-sm leading-relaxed whitespace-pre-wrap break-words"
+                             dangerouslySetInnerHTML={{ __html: colorJson(bodyStr) }}/>
                     </div>
                 </div>
             );
         }
 
-        /* ── Resizer ──────────────────────────────────────────────────────────── */
+        /* ── Resizer ─────────────────────────────────────────────────────── */
         function Resizer({leftWidth, setLeftWidth}) {
             const dragging = useRef(false);
-
             const onMouseDown = () => {
                 dragging.current = true;
                 document.body.style.cursor = 'ew-resize';
                 document.body.style.userSelect = 'none';
             };
-
             useEffect(() => {
                 const onMove = (e) => {
                     if (!dragging.current) return;
-                    // 256 = sidebar width
                     setLeftWidth(Math.max(280, Math.min(window.innerWidth - 256 - 280, e.clientX - 256)));
                 };
                 const onUp = () => {
@@ -1295,38 +1362,44 @@
                     document.removeEventListener('mouseup', onUp);
                 };
             }, [setLeftWidth]);
-
             return (
-                <div
-                    onMouseDown={onMouseDown}
-                    className="ew-resize hover:bg-indigo-500/60 transition-colors shrink-0"
-                    style={{ width: 4, background: '#1e293b', position: 'relative', flexShrink: 0 }}
-                >
-                    <div style={{ position: 'absolute', top: 0, bottom: 0, left: -4, right: -4 }}/>
+                <div onMouseDown={onMouseDown} className="ew-resize hover:bg-indigo-500/60 transition-colors shrink-0"
+                     style={{ width:4, background:'#1e293b', position:'relative', flexShrink:0 }}>
+                    <div style={{ position:'absolute', top:0, bottom:0, left:-4, right:-4 }}/>
                 </div>
             );
         }
 
-        /* ══════════════════════════════════════════════════════════════════════════
-           INSPECTOR  (main layout, shown when authenticated + authorised)
-        ══════════════════════════════════════════════════════════════════════════ */
+        /* ══════════════════════════════════════════════════════════════════════
+           INSPECTOR (main layout)
+        ══════════════════════════════════════════════════════════════════════ */
 
-        function Inspector({user, onLogout}) {
+        function Inspector({user, permissions, onLogout}) {
+            const canSepio = permissions.includes('sepio.inspect');
+            const canMT = permissions.includes('marinetraffic.inspect');
+
+            // Default to whichever is available
+            const [service, setService] = useState(canSepio ? 'sepio' : 'marinetraffic');
+
+            // Sepio-specific state
             const [customers, setCustomers] = useState([]);
             const [custId, setCustId] = useState('');
+
             const [ep, setEp] = useState(null);
             const [loading, setLoading] = useState(false);
             const [leftWidth, setLeftWidth] = useState(520);
             const [epStates, setEpStates] = useState({});
+            const [pathValues, setPathValues] = useState({});
 
-            // Fetch customers
+            // Load customers when on Sepio and not yet loaded
             useEffect(() => {
+                if (service !== 'sepio' || customers.length > 0) return;
                 apiFetch(`${API}/sepio-inspector/customers`)
                     .then(r => r.ok ? r.json() : [])
                     .then(setCustomers)
                     .catch(() => {
                     });
-            }, []);
+            }, [service]);
 
             const cust = customers.find(c => String(c.id) === String(custId)) || null;
 
@@ -1341,13 +1414,20 @@
                 }
             };
 
+            const handleServiceChange = (svc) => {
+                setService(svc);
+                setEp(null);
+                setPathValues({});
+            };
+
             const selectEp = (e) => {
                 setEp(e);
+                setPathValues({});
                 if (!epStates[e.id]) {
                     setEpStates(prev => ({
                         ...prev,
                         [e.id]: {
-                            payload: JSON.stringify(e.payload ? e.payload(cust) : {}, null, 2),
+                            payload: JSON.stringify(e.payload ? e.payload(service === 'sepio' ? cust : null) : {}, null, 2),
                             file: null,
                             resp: null
                         }
@@ -1356,10 +1436,17 @@
             };
 
             const cur = ep ? (epStates[ep.id] || {payload: '{}', file: null, resp: null}) : {};
-
             const updEp = (key, val) => {
                 if (!ep) return;
                 setEpStates(prev => ({...prev, [ep.id]: {...prev[ep.id], [key]: val}}));
+            };
+
+            // Resolve the actual path with substituted path params
+            const resolvedPath = (ep) => {
+                if (!ep?.path) return '';
+                return ep.pathParams
+                    ? ep.pathParams.reduce((p, k) => p.replace(`{${k}}`, pathValues[k] || ''), ep.path)
+                    : ep.path;
             };
 
             const send = async () => {
@@ -1369,14 +1456,27 @@
                 try {
                     let data;
 
-                    if (ep.internal) {
+                    if (ep.service === 'internal') {
+                        /* ── Internal DB reads ──────────────────────────────────── */
+                        const urlMap = {
+                            '__internal__/active-trackings': `${API}/marine-traffic-inspector/active-trackings`,
+                            '__internal__/active-vessels': `${API}/marine-traffic-inspector/active-vessels`,
+                        };
+                        const r = await apiFetch(urlMap[ep.endpoint] || '');
+                        const json = await r.json();
+                        data = {status: r.status, body: json, elapsed_ms: Date.now() - t0};
+
+                    } else if (ep.internal) {
+                        /* ── Sepio internal: refresh-token ──────────────────────── */
                         const r = await apiFetch(`${API}/sepio-inspector/refresh-token`, {
                             method: 'POST',
-                            body: JSON.stringify({customer_id: custId}),
+                            body: JSON.stringify({customer_id: custId})
                         });
                         data = await r.json();
+                        if (!data.elapsed_ms) data.elapsed_ms = Date.now() - t0;
 
                     } else if (ep.file) {
+                        /* ── Sepio file upload ──────────────────────────────────── */
                         const fd = new FormData();
                         fd.append('endpoint', ep.path);
                         fd.append('customer_id', custId);
@@ -1384,8 +1484,38 @@
                         if (cur.file) fd.append('file', cur.file);
                         const r = await apiFetch(`${API}/sepio-inspector/proxy-file`, {method: 'POST', body: fd});
                         data = await r.json();
+                        if (!data.elapsed_ms) data.elapsed_ms = Date.now() - t0;
+
+                    } else if (ep.service === 'vessel') {
+                        /* ── MarineTraffic AIS (vessel) ─────────────────────────── */
+                        let params = {};
+                        try {
+                            params = JSON.parse(cur.payload || '{}');
+                        } catch {
+                        }
+                        const r = await apiFetch(`${API}/marine-traffic-inspector/vessel`, {
+                            method: 'POST',
+                            body: JSON.stringify({endpoint: ep.endpoint, params}),
+                        });
+                        data = await r.json();
+                        if (!data.elapsed_ms) data.elapsed_ms = Date.now() - t0;
+
+                    } else if (ep.service === 'container') {
+                        /* ── MarineTraffic Container (Kpler) ────────────────────── */
+                        let params = {};
+                        try {
+                            params = JSON.parse(cur.payload || '{}');
+                        } catch {
+                        }
+                        const r = await apiFetch(`${API}/marine-traffic-inspector/container`, {
+                            method: 'POST',
+                            body: JSON.stringify({path: resolvedPath(ep), method: ep.method, params}),
+                        });
+                        data = await r.json();
+                        if (!data.elapsed_ms) data.elapsed_ms = Date.now() - t0;
 
                     } else {
+                        /* ── Sepio generic proxy ────────────────────────────────── */
                         let parsed = {};
                         try {
                             parsed = JSON.parse(cur.payload || '{}');
@@ -1402,9 +1532,9 @@
                             }),
                         });
                         data = await r.json();
+                        if (!data.elapsed_ms) data.elapsed_ms = Date.now() - t0;
                     }
 
-                    if (!data.elapsed_ms) data.elapsed_ms = Date.now() - t0;
                     updEp('resp', data);
                 } catch (e) {
                     updEp('resp', {status: 0, body: {error: e.message}, elapsed_ms: Date.now() - t0});
@@ -1414,11 +1544,10 @@
             };
 
             return (
-                <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
-
-                    {/* ── HEADER ─────────────────────────────────────────────────── */}
-                    <header style={{ height: 54, flexShrink: 0 }}
-                        className="flex items-center justify-between px-5 border-b border-slate-700 bg-slate-900">
+                <div style={{ display:'flex', flexDirection:'column', height:'100vh' }}>
+                    {/* ── HEADER ─────────────────────────────────────────── */}
+                    <header
+                        style={{ height:54, flexShrink:0 }} className="flex items-center justify-between px-5 border-b border-slate-700 bg-slate-900">
                         <div className="flex items-center gap-3">
                             <div
                                 className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg">
@@ -1428,54 +1557,41 @@
                                           d="M13 10V3L4 14h7v7l9-11h-7z"/>
                                 </svg>
                             </div>
-                            <span className="text-sm font-bold text-slate-100 tracking-tight">Sepio Inspector</span>
+                            <span className="text-sm font-bold text-slate-100 tracking-tight">API Inspector</span>
                             <span
                                 className="mono text-xs text-slate-700 bg-slate-800 px-2 py-0.5 rounded-md border border-slate-700">dev</span>
                         </div>
 
-                        <CustomerSelector
-                            customers={customers}
-                            custId={custId}
-                            onCustChange={changeCust}
-                        />
+                        {/* Centre: Service Switcher */}
+                        <ServiceSwitcher active={service} onChange={handleServiceChange} canSepio={canSepio}
+                                         canMT={canMT}/>
+
+                        {/* Right: Customer selector (Sepio only) or spacer */}
+                        <div style={{ minWidth: 240, display:'flex', justifyContent:'flex-end' }}>
+                            {service === 'sepio' && (
+                                <CustomerSelector customers={customers} custId={custId} onCustChange={changeCust}/>
+                            )}
+                        </div>
                     </header>
 
-                    {/* ── BODY ───────────────────────────────────────────────────── */}
-                    <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+                    {/* ── BODY ────────────────────────────────────────────── */}
+                    <div style={{ flex:1, display:'flex', overflow:'hidden' }}>
+                        <Sidebar service={service} selId={ep?.id} onSelect={selectEp} user={user} onLogout={onLogout}/>
 
-                        {/* Sidebar */}
-                        <Sidebar selId={ep?.id} onSelect={selectEp} user={user} onLogout={onLogout}/>
+                        <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden' }}>
+                            <RequestBar service={service} ep={ep} pathValues={pathValues} cust={cust} loading={loading}
+                                        onSend={send}/>
+                            <InfoBar service={service} ep={ep} cust={cust} file={cur.file}/>
+                            <PathParamEditor ep={ep} pathValues={pathValues} setPathValues={setPathValues}/>
 
-                        {/* Main column */}
-                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-
-                            {/* Request bar */}
-                            <RequestBar ep={ep} cust={cust} loading={loading} onSend={send}/>
-
-                            {/* Info bar */}
-                            <InfoBar ep={ep} cust={cust} file={cur.file}/>
-
-                            {/* Split panel */}
-                            <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-
-                                {/* Left: payload */}
+                            <div style={{ flex:1, display:'flex', overflow:'hidden' }}>
                                 <div
-                                    style={{ width: leftWidth, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
-                                        className="border-r border-slate-700/50">
-                                    <RequestPayload
-                                        ep={ep}
-                                        payload={cur.payload}
-                                        setPayload={v => updEp('payload', v)}
-                                        file={cur.file}
-                                        setFile={v => updEp('file', v)}
-                                    />
+                                    style={{ width:leftWidth, display:'flex', flexDirection:'column', overflow:'hidden' }} className="border-r border-slate-700/50">
+                                    <RequestPayload ep={ep} payload={cur.payload} setPayload={v => updEp('payload', v)}
+                                                    file={cur.file} setFile={v => updEp('file', v)}/>
                                 </div>
-
-                                {/* Resizer */}
                                 <Resizer leftWidth={leftWidth} setLeftWidth={setLeftWidth}/>
-
-                                {/* Right: response */}
-                                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                                <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden' }}>
                                     <ResponsePanel resp={cur.resp}/>
                                 </div>
                             </div>
@@ -1485,35 +1601,65 @@
             );
         }
 
-        /* ══════════════════════════════════════════════════════════════════════════
+        /* ══════════════════════════════════════════════════════════════════════
+           NO ACCESS SCREEN (neither permission)
+        ══════════════════════════════════════════════════════════════════════ */
+
+        function PermissionDenied({onLogout}) {
+            return (
+                <div
+                    style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'100vh', background:'#0f172a', gap:16 }}>
+                    <div
+                        className="w-14 h-14 rounded-2xl bg-red-500/10 border border-red-500/30 flex items-center justify-center">
+                        <svg className="w-7 h-7 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                  d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                        </svg>
+                    </div>
+                    <div className="text-center">
+                        <p className="text-slate-100 font-semibold text-base">Access Denied</p>
+                        <p className="text-slate-500 text-sm mt-1">You don't have permission to <span
+                            className="mono text-slate-400">inspect-sepio</span> or <span
+                            className="mono text-slate-400">inspect-marinetraffic</span>.</p>
+                    </div>
+                    <button onClick={onLogout}
+                            className="mt-2 px-5 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 text-sm font-medium rounded-lg transition-colors">Sign
+                        Out
+                    </button>
+                </div>
+            );
+        }
+
+        /* ══════════════════════════════════════════════════════════════════════
            APP  (auth wrapper)
-        ══════════════════════════════════════════════════════════════════════════ */
+        ══════════════════════════════════════════════════════════════════════ */
 
         function App() {
             const [token, setTokenState] = useState(getToken());
             const [user, setUser] = useState(null);
+            const [permissions, setPerms] = useState([]);
             const [status, setStatus] = useState('loading'); // loading | ok | no_perm | unauthed
 
-            // Global 401 handler
             useEffect(() => {
                 const h = () => {
                     saveToken(null);
                     setTokenState(null);
                     setUser(null);
+                    setPerms([]);
                     setStatus('unauthed');
                 };
-                window.addEventListener('sepio:401', h);
-                return () => window.removeEventListener('sepio:401', h);
+                window.addEventListener('insp:401', h);
+                return () => window.removeEventListener('insp:401', h);
             }, []);
 
-            // Restore session from stored token
             useEffect(() => {
                 if (!token) {
                     setStatus('unauthed');
                     return;
                 }
                 setStatus('loading');
-                apiFetch(`${API}/sepio-inspector/me`)
+                // Fetch own profile — includes role.permissions from UserResource
+                apiFetch(`${API}/me`)
                     .then(r => {
                         if (r.status === 401) {
                             saveToken(null);
@@ -1521,17 +1667,15 @@
                             setStatus('unauthed');
                             return null;
                         }
-                        if (r.status === 403) {
-                            setStatus('no_perm');
-                            return null;
-                        }
                         return r.json();
                     })
                     .then(data => {
-                        if (data) {
-                            setUser(data);
-                            setStatus('ok');
-                        }
+                        if (!data) return;
+                        const perms = data.role?.permissions || [];
+                        const canAny = perms.includes('sepio.inspect') || perms.includes('marinetraffic.inspect');
+                        setUser(data);
+                        setPerms(perms);
+                        setStatus(canAny ? 'ok' : 'no_perm');
                     })
                     .catch(() => setStatus('unauthed'));
             }, [token]);
@@ -1539,8 +1683,11 @@
             const handleLogin = (tok, u) => {
                 saveToken(tok);
                 setTokenState(tok);
+                const perms = u.role?.permissions || [];
                 setUser(u);
-                setStatus('ok');
+                setPerms(perms);
+                const canAny = perms.includes('sepio.inspect') || perms.includes('marinetraffic.inspect');
+                setStatus(canAny ? 'ok' : 'no_perm');
             };
 
             const handleLogout = async () => {
@@ -1551,13 +1698,14 @@
                 saveToken(null);
                 setTokenState(null);
                 setUser(null);
+                setPerms([]);
                 setStatus('unauthed');
             };
 
             if (status === 'loading') return <LoadingScreen/>;
             if (status === 'unauthed') return <LoginScreen onLogin={handleLogin}/>;
             if (status === 'no_perm') return <PermissionDenied onLogout={handleLogout}/>;
-            return <Inspector user={user} onLogout={handleLogout}/>;
+            return <Inspector user={user} permissions={permissions} onLogout={handleLogout}/>;
         }
 
         ReactDOM.createRoot(document.getElementById('root')).render(<App/>);

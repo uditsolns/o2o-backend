@@ -30,5 +30,9 @@ class AppServiceProvider extends ServiceProvider
         Gate::define('inspect-sepio', function (User $user) {
             return $user->hasPermission('sepio.inspect');
         });
+
+        Gate::define('inspect-marinetraffic', function (User $user) {
+            return $user->hasPermission('marinetraffic.inspect');
+        });
     }
 }
