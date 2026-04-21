@@ -194,6 +194,59 @@ class SealOrderSeeder extends Seeder
                 'il_approved_at' => now()->subDays(6),
                 'il_remarks' => 'Quantity below minimum threshold for this payment type.',
             ]),
+
+            // Order Placed — forwarded to Sepio manufacturer
+            array_merge($base, $calc(150), [
+                'order_ref' => "IL{$cid}T008",
+                'ordered_by_id' => $user->id,
+                'payment_type' => 'cash',
+                'status' => SealOrderStatus::OrderPlaced,
+                'il_approved_by' => $admin->id,
+                'il_approved_at' => now()->subDays(9),
+                'sepio_order_id' => 'SEPIO-ORD-' . $cid . '-008',
+                'sepio_billing_address_id' => $billingLoc->sepio_billing_address_id,
+                'sepio_shipping_address_id' => $shippingLoc->sepio_shipping_address_id,
+            ]),
+
+            // In Progress — Sepio manufacturing
+            array_merge($base, $calc(250), [
+                'order_ref' => "IL{$cid}T009",
+                'ordered_by_id' => $user->id,
+                'payment_type' => 'credit',
+                'status' => SealOrderStatus::InProgress,
+                'il_approved_by' => $admin->id,
+                'il_approved_at' => now()->subDays(11),
+                'sepio_order_id' => 'SEPIO-ORD-' . $cid . '-009',
+                'sepio_billing_address_id' => $billingLoc->sepio_billing_address_id,
+                'sepio_shipping_address_id' => $shippingLoc->sepio_shipping_address_id,
+            ]),
+
+            // Mfg Completed — manufactured, not yet dispatched
+            array_merge($base, $calc(300), [
+                'order_ref' => "IL{$cid}T010",
+                'ordered_by_id' => $user->id,
+                'payment_type' => 'advance_balance',
+                'status' => SealOrderStatus::MfgCompleted,
+                'il_approved_by' => $admin->id,
+                'il_approved_at' => now()->subDays(18),
+                'sepio_order_id' => 'SEPIO-ORD-' . $cid . '-010',
+                'sepio_billing_address_id' => $billingLoc->sepio_billing_address_id,
+                'sepio_shipping_address_id' => $shippingLoc->sepio_shipping_address_id,
+            ]),
+
+            // Mfg Rejected — cancelled by Sepio
+            array_merge($base, $calc(100), [
+                'order_ref' => "IL{$cid}T011",
+                'ordered_by_id' => $user->id,
+                'payment_type' => 'cash',
+                'status' => SealOrderStatus::MfgRejected,
+                'il_approved_by' => $admin->id,
+                'il_approved_at' => now()->subDays(14),
+                'il_remarks' => 'Sepio rejected: invalid port codes submitted.',
+                'sepio_order_id' => 'SEPIO-ORD-' . $cid . '-011',
+                'sepio_billing_address_id' => $billingLoc->sepio_billing_address_id,
+                'sepio_shipping_address_id' => $shippingLoc->sepio_shipping_address_id,
+            ]),
         ];
     }
 }
