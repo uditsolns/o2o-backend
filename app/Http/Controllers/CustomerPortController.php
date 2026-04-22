@@ -25,6 +25,7 @@ class CustomerPortController extends Controller
             ->allowedFilters([
                 AllowedFilter::exact('port_category'),
                 AllowedFilter::exact('is_active'),
+                AllowedFilter::exact('customer_id'),
                 AllowedFilter::callback('search', function ($query, $value) {
                     $query->where(function ($q) use ($value) {
                         $q->where('name', 'like', "%{$value}%")
@@ -33,7 +34,7 @@ class CustomerPortController extends Controller
                 }),
             ])
             ->allowedSorts(['name', 'code', 'port_category', 'created_at'])
-            ->allowedIncludes(['port'])
+            ->allowedIncludes(['port', 'customer'])
             ->defaultSort('name')
             ->paginate($request->query('per_page', 50))
             ->appends($request->query());

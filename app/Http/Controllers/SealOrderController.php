@@ -25,6 +25,7 @@ class SealOrderController extends Controller
 
         $orders = QueryBuilder::for(SealOrder::class)
             ->allowedFilters([
+                AllowedFilter::exact('customer_id'),
                 AllowedFilter::exact('status'),
                 AllowedFilter::exact('payment_type'),
                 AllowedFilter::callback('search', function ($query, $value) {
@@ -35,7 +36,7 @@ class SealOrderController extends Controller
                 }),
             ])
             ->allowedSorts(['ordered_at', 'total_amount', 'status'])
-            ->allowedIncludes(['billingLocation', 'shippingLocation', 'orderedBy', 'ilApprovedBy'])
+            ->allowedIncludes(['customer', 'billingLocation', 'shippingLocation', 'orderedBy', 'ilApprovedBy'])
             ->defaultSort('-ordered_at')
             ->paginate($request->query('per_page', 20))
             ->appends($request->query());

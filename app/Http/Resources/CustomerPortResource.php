@@ -22,6 +22,10 @@ class CustomerPortResource extends JsonResource
             'geo_fence_radius' => $this->geo_fence_radius,
             'is_active' => $this->is_active,
             'port' => $this->whenLoaded('port', fn() => new PortResource($this->port)),
+            'customer' => $this->whenLoaded('customer', fn() => [
+                'id' => $this->customer->id,
+                'company_name' => $this->customer->company_name,
+            ]),
             'created_at' => $this->created_at,
         ];
     }

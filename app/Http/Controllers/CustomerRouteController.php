@@ -25,6 +25,7 @@ class CustomerRouteController extends Controller
 
         $routes = QueryBuilder::for(CustomerRoute::class)
             ->allowedFilters([
+                AllowedFilter::exact('customer_id'),
                 AllowedFilter::exact('trip_type'),
                 AllowedFilter::exact('transport_mode'),
                 AllowedFilter::exact('is_active'),

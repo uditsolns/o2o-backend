@@ -35,6 +35,7 @@ class TripController extends Controller
 
         $trips = QueryBuilder::for(Trip::class)
             ->allowedFilters([
+                AllowedFilter::exact('customer_id'),
                 AllowedFilter::exact('status'),
                 AllowedFilter::exact('trip_type'),
                 AllowedFilter::exact('transport_mode'),
@@ -50,7 +51,7 @@ class TripController extends Controller
                 AllowedFilter::callback('dispatch_date_to', fn($q, $v) => $q->whereDate('dispatch_date', '<=', $v)),
             ])
             ->allowedSorts(['trip_ref', 'status', 'dispatch_date', 'created_at'])
-            ->allowedIncludes(['seal', 'createdBy', 'documents', 'segments'])
+            ->allowedIncludes(['customer', 'seal', 'createdBy', 'documents', 'segments'])
             ->defaultSort('-created_at')
             ->paginate($request->query('per_page', 20))
             ->appends($request->query());

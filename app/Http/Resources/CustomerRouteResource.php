@@ -47,6 +47,10 @@ class CustomerRouteResource extends JsonResource
                 'code' => $this->destination_port_code,
                 'category' => $this->destination_port_category,
             ],
+            'customer' => $this->whenLoaded('customer', fn() => [
+                'id' => $this->customer->id,
+                'company_name' => $this->customer->company_name,
+            ]),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

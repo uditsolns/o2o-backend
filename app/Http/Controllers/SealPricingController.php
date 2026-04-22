@@ -59,7 +59,7 @@ class SealPricingController extends Controller
     {
         $user = $request->user();
 
-        $request->validate([
+        $data = $request->validate([
             'customer_id' => ['required', Rule::requiredIf($user->isPlatformUser()), 'exists:customers,id'],
             'quantity' => ['required', 'integer', 'min:20']
         ]);

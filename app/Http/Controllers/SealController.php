@@ -27,6 +27,7 @@ class SealController extends Controller
 
         $seals = QueryBuilder::for(Seal::class)
             ->allowedFilters([
+                AllowedFilter::exact('customer_id'),
                 AllowedFilter::exact('status'),
                 AllowedFilter::exact('sepio_status'),
                 AllowedFilter::exact('seal_order_id'),
@@ -36,7 +37,7 @@ class SealController extends Controller
                 }),
             ])
             ->allowedSorts(['seal_number', 'status', 'last_scan_at', 'created_at'])
-            ->allowedIncludes(['order', 'trip'])
+            ->allowedIncludes(['customer', 'order', 'trip'])
             ->defaultSort('-created_at')
             ->paginate($request->query('per_page', 50))
             ->appends($request->query());
