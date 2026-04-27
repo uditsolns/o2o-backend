@@ -27,6 +27,10 @@ class SealResource extends JsonResource
                 'trip_ref' => $this->trip->trip_ref,
                 'status' => $this->trip->status,
             ]),
+            'customer' => $this->whenLoaded('customer', fn() => [
+                'id' => $this->customer->id,
+                'company_name' => $this->customer->company_name,
+            ]),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

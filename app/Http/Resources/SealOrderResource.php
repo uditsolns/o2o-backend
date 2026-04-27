@@ -45,6 +45,10 @@ class SealOrderResource extends JsonResource
                 'id' => $this->ilApprovedBy->id,
                 'name' => $this->ilApprovedBy->name,
             ]),
+            'customer' => $this->whenLoaded('customer', fn() => [
+                'id' => $this->customer->id,
+                'company_name' => $this->customer->company_name,
+            ]),
             'ordered_at' => $this->ordered_at,
             'updated_at' => $this->updated_at,
         ];
