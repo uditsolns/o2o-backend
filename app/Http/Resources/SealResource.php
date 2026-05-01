@@ -22,15 +22,12 @@ class SealResource extends JsonResource
                 'id' => $this->order->id,
                 'order_ref' => $this->order->order_ref,
             ]),
-            'trip' => $this->whenLoaded('trip', fn() => [
-                'id' => $this->trip->id,
-                'trip_ref' => $this->trip->trip_ref,
-                'status' => $this->trip->status,
-            ]),
+            'trip' => new TripResource($this->whenLoaded('trip')),
             'customer' => $this->whenLoaded('customer', fn() => [
                 'id' => $this->customer->id,
                 'company_name' => $this->customer->company_name,
             ]),
+            'status_logs' => SealStatusLogResource::collection($this->whenLoaded('statusLogs')),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

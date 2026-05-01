@@ -118,6 +118,8 @@ return new class extends Migration {
             $table->text('epod_confirmation_notes')->nullable();
             $table->timestamps();
 
+            // TODO: add document upload during E POD
+
             $table->index(['customer_id', 'status']);
             $table->index(['customer_id', 'container_number'], 'trips_customer_container_idx');
             $table->index('container_number');

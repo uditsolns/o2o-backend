@@ -50,7 +50,7 @@ class SealController extends Controller
         $this->authorize('view', $seal);
 
         return response()->json(new SealResource(
-            $seal->load('order', 'trip')
+            $seal->load('customer', 'order', 'trip')
         ));
     }
 

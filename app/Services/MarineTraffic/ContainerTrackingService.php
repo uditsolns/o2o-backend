@@ -5,6 +5,7 @@ namespace App\Services\MarineTraffic;
 use App\Models\Trip;
 use App\Models\TripContainerTracking;
 use App\Models\TripShipmentMilestone;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -34,6 +35,10 @@ class ContainerTrackingService
             ]
         );
 
+        if ($record->tracking_status === 'active') {
+            return $record;
+        }
+
         $response = $this->http()->post('/tracking-requests', [
             'data' => [[
                 'type' => 'tracking_request',
@@ -59,8 +64,15 @@ class ContainerTrackingService
 
         $item = $response->json('data.0') ?? $response->json('data') ?? null;
 
-        $trackingRequestId = $item['trackingRequestId'] ?? null;
-        $shipmentId = $item['relationships']['shipment']['data']['shipmentId'] ?? null;
+        $trackingRequestId =
+            $item['trackingRequestId']
+            ?? $item['id']
+            ?? null;
+
+        $shipmentId =
+            data_get($item, 'relationships.shipment.data.shipmentId')
+            ?? data_get($item, 'relationships.shipment.data.id');
+
         $status = $item['attributes']['status'] ?? 'pending';
 
         $record->update([
@@ -83,12 +95,13 @@ class ContainerTrackingService
      */
     public function processWebhookShipment(array $shipment): void
     {
-        $shipmentId = $shipment['shipmentId'] ?? null;
+        $shipmentId = $shipment['shipmentId'] ?? $shipment['id'] ?? null;
         if (!$shipmentId) return;
 
         $record = TripContainerTracking::where('mt_shipment_id', $shipmentId)->first();
         if (!$record) {
             Log::warning('ContainerTrackingService: unknown shipmentId in webhook', ['id' => $shipmentId]);
+            Log::debug("Payload: ", $shipment);
             return;
         }
 
@@ -98,6 +111,9 @@ class ContainerTrackingService
         $insights = $attrs['insights'] ?? [];
         $pol = $attrs['portOfLoading'] ?? null;
         $pod = $attrs['portOfDischarge'] ?? null;
+        $positionTime = $pos['timestamp']
+            ?? $pos['positionReceivedAt']
+            ?? now();
 
         $record->update([
             'tracking_status' => 'active',
@@ -116,13 +132,13 @@ class ContainerTrackingService
             'current_vessel_speed' => $pos['speed'] ?? null,
             'current_vessel_heading' => $pos['heading'] ?? null,
             'current_vessel_geo_area' => $pos['geographicalArea'] ?? null,
-            'current_vessel_position_at' => now(),
+            'current_vessel_position_at' => $positionTime,
             'last_synced_at' => now(),
             'raw_shipment_snapshot' => $shipment,
         ]);
 
         // Sync vessel IMO + SHIP_ID onto trip for AIS polling
-        if (!empty($currentVessel['imo'])) {
+        if ($record->trip && !empty($currentVessel['imo'])) {
             $record->trip->updateQuietly([
                 'vessel_imo_number' => $currentVessel['imo'],
                 'vessel_name' => $currentVessel['name'] ?? $record->trip->vessel_name,
@@ -149,6 +165,7 @@ class ContainerTrackingService
             Log::warning('ContainerTrackingService: milestone fetch failed', [
                 'shipment_id' => $record->mt_shipment_id,
             ]);
+            Log::debug('Response: ', $response->json());
             return;
         }
 
@@ -189,7 +206,9 @@ class ContainerTrackingService
                         'vessel_imo' => $vessel['imo'] ?? null,
                         'voyage_number' => $vessel['voyageNumber'] ?? null,
                         'sequence_order' => $event['eventOrder'] ?? 0,
-                        'occurred_at' => $event['eventDateTime'] ?? null,
+                        'occurred_at' => !empty($event['eventDateTime'])
+                            ? Carbon::parse($event['eventDateTime'])
+                            : null,
                     ]
                 );
             } catch (\Throwable $e) {

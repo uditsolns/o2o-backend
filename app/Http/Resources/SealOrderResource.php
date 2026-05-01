@@ -5,6 +5,7 @@ namespace App\Http\Resources;
 use App\Models\SealOrder;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Support\Facades\Storage;
 
 /** @mixin SealOrder */
 class SealOrderResource extends JsonResource
@@ -27,6 +28,10 @@ class SealOrderResource extends JsonResource
             'il_remarks' => $this->il_remarks,
             'il_approved_at' => $this->il_approved_at,
             'sepio_order_id' => $this->sepio_order_id,
+            'il_remark_file_url' => $this->when(
+                filled($this->il_remark_file_url),
+                fn() => Storage::temporaryUrl($this->il_remark_file_url, now()->addMinutes(30)),
+            ),
             'courier_name' => $this->courier_name,
             'courier_docket_number' => $this->courier_docket_number,
             'seals_dispatched_at' => $this->seals_dispatched_at,

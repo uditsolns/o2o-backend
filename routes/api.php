@@ -55,7 +55,12 @@ Route::prefix('v1')->group(function () {
         Route::post('customers/{customer}/approve', [CustomerController::class, 'approve']);
         Route::post('customers/{customer}/reject', [CustomerController::class, 'reject']);
         Route::post('customers/{customer}/park', [CustomerController::class, 'park']);
+        Route::post('customers/{customer}/signatories', [OnboardingController::class, 'addSignatory']);
+        Route::put('customers/{customer}/signatories/{signatory}', [OnboardingController::class, 'updateSignatory']);
+        Route::delete('customers/{customer}/signatories/{signatory}', [OnboardingController::class, 'deleteSignatory']);
         Route::get('customers/{customer}/documents', [CustomerController::class, 'documents']);
+        Route::post('customers/{customer}/documents', [OnboardingController::class, 'uploadDocument']);
+        Route::delete('customers/{customer}/documents/{document}', [OnboardingController::class, 'deleteDocument']);
         Route::get('customers/{customer}/seals', [CustomerController::class, 'seals']);
         Route::get('customers/{customer}/orders', [CustomerController::class, 'orders']);
         Route::get('customers/{customer}/trips', [CustomerController::class, 'trips']);
@@ -148,6 +153,9 @@ Route::prefix('v1')->group(function () {
             Route::get('trips/{trip}/documents', [TripDocumentController::class, 'index']);
             Route::post('trips/{trip}/documents', [TripDocumentController::class, 'store']);
             Route::delete('trips/{trip}/documents/{document}', [TripDocumentController::class, 'destroy']);
+
+            // Trip Report
+            Route::get('trips/{trip}/report', [TripController::class, 'report']);
 
             // Dashboard — single endpoint, branches by user type inside controller
             Route::get('dashboard/stats', [DashboardController::class, 'stats']);

@@ -80,10 +80,7 @@ class OnboardingController extends Controller
             $data['id_proof_url'] = $path;
         }
 
-        $signatory = $this->service->addSignatory(
-            $request->user()->customer,
-            $data
-        );
+        $signatory = $this->service->addSignatory($customer, $data);
 
         return response()->json(new AuthorizedSignatoryResource($signatory), 201);
     }
@@ -159,7 +156,7 @@ class OnboardingController extends Controller
         $this->denyIfSubmitted($request);
 
         $customer = $this->resolveCustomer($request);
-        
+
         $customer = $this->service->submit($customer);
 
         return response()->json([

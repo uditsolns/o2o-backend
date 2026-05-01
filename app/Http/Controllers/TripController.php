@@ -20,6 +20,7 @@ use App\Services\TripService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Http\Resources\Json\JsonResource;
 use Spatie\QueryBuilder\AllowedFilter;
 use Spatie\QueryBuilder\QueryBuilder;
 
@@ -73,7 +74,7 @@ class TripController extends Controller
         $this->authorize('view', $trip);
 
         return response()->json(new TripResource(
-            $trip->load('seal', 'createdBy', 'documents', 'segments', 'containerTracking')
+            $trip->load('customer', 'seal', 'createdBy', 'documents', 'segments', 'containerTracking')
         ));
     }
 
@@ -214,5 +215,18 @@ class TripController extends Controller
         return TripShipmentMilestoneResource::collection(
             $trip->shipmentMilestones
         );
+    }
+
+    public function report(Trip $trip): JsonResource
+    {
+        $this->authorize('view', $trip);
+
+        $trip->load([
+            'customer', 'seal', 'seal.statusLogs', 'segments',
+            'trackingPoints', 'containerTracking', 'shipmentMilestones',
+            'events', 'documents', 'documents.uploadedBy'
+        ]);
+
+        return new TripResource($trip);
     }
 }

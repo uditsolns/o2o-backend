@@ -53,6 +53,8 @@ class AuthService
             ]);
         }
 
+        // TODO: Add gate: do not allow users whos customers are not onboarded
+
         $user->update(['last_login_at' => now()]);
 
         $token = $user->createToken('api')->plainTextToken;

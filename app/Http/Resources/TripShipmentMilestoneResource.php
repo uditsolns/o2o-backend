@@ -12,6 +12,7 @@ class TripShipmentMilestoneResource extends JsonResource
     public function toArray(Request $request): array
     {
         return [
+            'id' => $this->id,
             'event_type' => $this->event_type,
             'event_classifier' => $this->event_classifier,
             'location' => [

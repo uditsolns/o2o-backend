@@ -75,19 +75,20 @@ class SealSeeder extends Seeder
                 ->get();
 
             foreach ($insertedSeals as $seal) {
+                $scanLocation = $this->scanLocationFor($seal->status->value, $seal->customer_id);
+
                 SealStatusLog::insert([
                     'customer_id' => $seal->customer_id,
                     'seal_id' => $seal->id,
                     'trip_id' => null,
                     'status' => $seal->sepio_status->value,
-                    'scan_location' => fake()->city() . ' Port',
-                    'scanned_lat' => fake()->latitude(8, 35),
-                    'scanned_lng' => fake()->longitude(68, 97),
-                    'scanned_by' => 'Sepio Scanner',
-                    'raw_response' => json_encode(['sealStatus' => ucfirst($seal->sepio_status->value)]),
+                    'scan_location' => $scanLocation['name'],
+                    'scanned_lat' => $scanLocation['lat'],
+                    'scanned_lng' => $scanLocation['lng'],
+                    'scanned_by' => 'Sepio Scanner Agent',
+                    'raw_response' => json_encode(['sealStatus' => ucfirst($seal->sepio_status->value), 'location' => $scanLocation['name']]),
                     'checked_at' => now()->subDays(rand(1, 10)),
                 ]);
-                $logCount++;
             }
 
             $allSeals = array_merge($allSeals, Seal::where('seal_order_id', $order->id)->get()->all());
@@ -119,5 +120,18 @@ class SealSeeder extends Seeder
         if ($pct < 93) return [SealStatus::InTransit, SepioSealStatus::Valid];
         if ($pct < 97) return [SealStatus::Tampered, SepioSealStatus::Tampered];
         return [SealStatus::Lost, SepioSealStatus::Unknown];
+    }
+
+    private function scanLocationFor(string $status, int $customerId): array
+    {
+        $locations = [
+            ['name' => 'Jawaharlal Nehru Port (INNSA)', 'lat' => 18.9488, 'lng' => 72.9511],
+            ['name' => 'Chennai Port Kamarajar (INMAA)', 'lat' => 13.0836, 'lng' => 80.2969],
+            ['name' => 'Mundra Port (INMUN)', 'lat' => 22.8381, 'lng' => 69.7032],
+            ['name' => 'Jebel Ali Port (AEJEA)', 'lat' => 24.9857, 'lng' => 55.0272],
+            ['name' => 'ICD Tughlakabad (INTDL)', 'lat' => 28.5011, 'lng' => 77.2877],
+        ];
+
+        return $locations[array_rand($locations)];
     }
 }

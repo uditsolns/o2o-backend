@@ -31,7 +31,7 @@ class TripTrackingController extends Controller
             ->when($request->query('from'), fn($q, $v) => $q->where('recorded_at', '>=', $v))
             ->when($request->query('to'), fn($q, $v) => $q->where('recorded_at', '<=', $v))
             ->orderByDesc('recorded_at')
-            ->paginate($request->query('per_page', 100));
+            ->get();
 
         return TripTrackingPointResource::collection($points);
     }
