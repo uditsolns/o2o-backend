@@ -13,6 +13,7 @@ use App\Http\Controllers\Inspectors\MarineTrafficInspectorController;
 use App\Http\Controllers\Inspectors\SepioInspectorController;
 use App\Http\Controllers\OnboardingController;
 use App\Http\Controllers\PortController;
+use App\Http\Controllers\RoleController;
 use App\Http\Controllers\SealController;
 use App\Http\Controllers\SealOrderController;
 use App\Http\Controllers\SealPricingController;
@@ -43,6 +44,11 @@ Route::prefix('v1')->group(function () {
         Route::get('me', [UserController::class, 'me']);
         Route::patch('me', [UserController::class, 'updateMe']);
         Route::get('me/customer', [UserController::class, 'myCustomer']);
+
+        // Roles & Permissions
+        Route::get('roles', [RoleController::class, 'index']);
+        Route::get('roles/{role}', [RoleController::class, 'show']);
+        Route::get('permissions', [RoleController::class, 'permissions']);
 
         // ── Users ─────────────────────────────────────────────────────────────
         // Platform admin → platform users | Client admin → own org users (TenantScope)
