@@ -16,6 +16,7 @@ class StoreUserRequest extends FormRequest
     {
         return [
             'customer_id' => ['nullable', Rule::requiredIf($this->user()->isPlatformUser()), 'exists:customers,id'],
+            'role_id' => ['required', 'exists:roles,id'],
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'unique:users,email'],
             'mobile' => ['nullable', 'string', 'max:20'],

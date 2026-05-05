@@ -54,6 +54,9 @@ class TripController extends Controller
             ->allowedSorts(['trip_ref', 'status', 'dispatch_date', 'created_at'])
             ->allowedIncludes(['customer', 'seal', 'createdBy', 'documents', 'segments'])
             ->defaultSort('-created_at')
+            // Drivers only see their assigned trip
+            ->when($request->user()->isDriver(),
+                fn($q) => $q->where('driver_user_id', $request->user()->id))
             ->paginate($request->query('per_page', 20))
             ->appends($request->query());
 

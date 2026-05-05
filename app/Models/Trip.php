@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\{BelongsTo, HasMany, HasOne};
 class Trip extends Model
 {
     protected $fillable = [
-        'customer_id', 'created_by_id', 'seal_id', 'trip_ref',
+        'customer_id', 'created_by_id', 'driver_user_id', 'seal_id', 'trip_ref',
         'status', 'trip_type', 'transport_mode', 'risk_score',
         'driver_name', 'driver_license', 'driver_aadhaar', 'driver_phone',
         'is_driver_license_verified', 'is_driver_aadhaar_verified',
@@ -87,6 +87,11 @@ class Trip extends Model
     public function createdBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by_id');
+    }
+
+    public function driverUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'driver_user_id');
     }
 
     public function seal(): BelongsTo

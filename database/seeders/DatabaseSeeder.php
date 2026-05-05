@@ -63,8 +63,15 @@ class DatabaseSeeder extends Seeder
                 ['Customer Admin', 'user.*@mehtaintl.test', 'password', 'submitted'],
                 ['Customer Admin', 'user.*@pateltraders.test', 'password', 'il_parked'],
                 ['Customer Admin', 'user.*@raoglobal.test', 'password', 'il_approved'],
+                ['Operations Executive', 'ops.*@raoglobal.test', 'password', 'il_approved'],
                 ['Customer Admin', 'user.*@vermalogistics.test', 'password', 'completed ✅'],
+                ['Operations Executive', 'ops.*@vermalogistics.test', 'password', 'completed ✅'],
                 ['Customer Admin', 'user.*@iyerimpex.test', 'password', 'completed ✅'],
+                ['Operations Executive', 'ops.*@iyerimpex.test', 'password', 'completed ✅'],
+                ['Driver (Verma)', 'driver.9871122334@customer-*.internal', 'password', 'completed ✅'],
+                ['Driver (Verma)', 'driver.9811234567@customer-*.internal', 'password', 'completed ✅'],
+                ['Driver (Iyer)', 'driver.9840123456@customer-*.internal', 'password', 'completed ✅'],
+                // (more drivers created per trip — check users table filtered by role)
             ]
         );
         $this->command->info('  (* = auto-assigned ID — check users table for exact email)');

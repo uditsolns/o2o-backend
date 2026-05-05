@@ -28,6 +28,7 @@ class CustomerSeeder extends Seeder
     {
         $adminUser = User::where('email', 'admin@admin.com')->firstOrFail();
         $caRole = Role::where('name', 'customer_admin')->firstOrFail();
+        $oeRole = Role::where('name', 'operations_executive')->firstOrFail();
 
         $definitions = $this->definitions();
         $customers = [];
@@ -87,6 +88,27 @@ class CustomerSeeder extends Seeder
                     'created_by_id' => $adminUser->id,
                 ]
             );
+
+            // ── Operations Executive user — only for customers that can have trips ──
+            // (IlApproved and Completed — they have locations, ports, wallets)
+            if (in_array($def['onboarding_status'], [
+                CustomerOnboardingStatus::IlApproved,
+                CustomerOnboardingStatus::Completed,
+            ])) {
+                $companySlug = strtolower(str_replace(' ', '', $def['company_name']));
+                User::firstOrCreate(
+                    ['email' => 'ops.' . $customer->id . '@' . $companySlug . '.test'],
+                    [
+                        'role_id' => $oeRole->id,
+                        'customer_id' => $customer->id,
+                        'name' => 'Operations Executive — ' . $customer->company_name,
+                        'mobile' => '98' . str_pad($customer->id * 11, 8, '0', STR_PAD_LEFT),
+                        'password' => Hash::make('password'),
+                        'status' => UserStatus::Active,
+                        'created_by_id' => $adminUser->id,
+                    ]
+                );
+            }
 
             $customers[] = $customer->fresh();
         }

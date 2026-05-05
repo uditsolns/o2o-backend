@@ -15,6 +15,12 @@ class TripPolicy
     {
         if (!$user->hasPermission('trip.view')) return false;
         if ($user->isPlatformUser()) return true;
+
+        // Driver can only see their own assigned trip
+        if ($user->isDriver()) {
+            return $trip->driver_user_id === $user->id;
+        }
+
         return $trip->customer_id === $user->customer_id;
     }
 
@@ -45,7 +51,6 @@ class TripPolicy
         return $trip->customer_id === $user->customer_id;
     }
 
-    // vessel-info update reuses trip.update
     public function addVesselInfo(User $user, Trip $trip): bool
     {
         return $this->update($user, $trip);

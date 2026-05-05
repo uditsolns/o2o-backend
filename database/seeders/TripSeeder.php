@@ -6,8 +6,10 @@ use App\Enums\SealStatus;
 use App\Enums\TripStatus;
 use App\Enums\TripTransportationMode;
 use App\Enums\TripType;
+use App\Enums\UserStatus;
 use App\Models\Customer;
 use App\Models\CustomerLocation;
+use App\Models\Role;
 use App\Models\Seal;
 use App\Models\Trip;
 use App\Models\TripDocument;
@@ -61,6 +63,12 @@ class TripSeeder extends Seeder
                     ]);
                 }
 
+                // ── Auto-create driver user for road/multimodal trips ──────────────
+                $driverUserId = $this->upsertDriverUser($customer->id, $trip);
+                if ($driverUserId) {
+                    $trip->updateQuietly(['driver_user_id' => $driverUserId]);
+                }
+
                 $this->seedEvents($trip, $user);
                 $this->seedDocuments($trip, $user);
 
@@ -69,6 +77,55 @@ class TripSeeder extends Seeder
         }
 
         $this->command->info("  TripSeeder: {$total} trips seeded.");
+    }
+
+    private function upsertDriverUser(int $customerId, Trip $trip): ?int
+    {
+        // Only road or multimodal trips need a driver user
+        $mode = $trip->transport_mode instanceof \App\Enums\TripTransportationMode
+            ? $trip->transport_mode->value
+            : $trip->transport_mode;
+
+        if (!in_array($mode, ['road', 'multimodal'], true)) {
+            return null;
+        }
+
+        if (empty($trip->driver_phone)) {
+            return null;
+        }
+
+        $driverRole = Role::where('name', 'driver')->first();
+        if (!$driverRole) {
+            return null; // RolePermissionSeeder not yet run
+        }
+
+        $existing = User::where('customer_id', $customerId)
+            ->where('mobile', $trip->driver_phone)
+            ->where('role_id', $driverRole->id)
+            ->first();
+
+        if ($existing) {
+            // Update name if we have a better one
+            if (!empty($trip->driver_name) && $existing->name !== $trip->driver_name) {
+                $existing->update(['name' => $trip->driver_name]);
+            }
+            return $existing->id;
+        }
+
+        // Synthetic internal email — unique per phone + customer
+        $email = 'driver.' . $trip->driver_phone . '@customer-' . $customerId . '.internal';
+
+        $user = User::create([
+            'role_id' => $driverRole->id,
+            'customer_id' => $customerId,
+            'name' => $trip->driver_name ?? 'Driver ' . $trip->driver_phone,
+            'email' => $email,
+            'mobile' => $trip->driver_phone,
+            'password' => bcrypt('password'), // known password for seeded drivers
+            'status' => UserStatus::Active,
+        ]);
+
+        return $user->id;
     }
 
     // ── Scenario definitions per customer ─────────────────────────────────────

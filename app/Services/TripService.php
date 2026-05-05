@@ -5,10 +5,12 @@ namespace App\Services;
 use App\Enums\SealStatus;
 use App\Enums\TripStatus;
 use App\Enums\TripTransportationMode;
+use App\Enums\UserStatus;
 use App\Exceptions\SepioException;
 use App\Jobs\RegisterContainerTrackingJob;
 use App\Models\CustomerConsignee;
 use App\Models\CustomerConsignor;
+use App\Models\Role;
 use App\Models\Seal;
 use App\Models\TripSegment;
 use App\Models\Trip;
@@ -62,6 +64,9 @@ readonly class TripService
                     ['seal_number' => $seal->seal_number], actorId: $createdBy->id);
             }
 
+            // Auto-create driver user for road/multimodal trips
+            $this->upsertDriverUser($customerId, $trip);
+
             // Auto-create consignor & consignee
             $this->upsertConsignor($customerId, $trip);
             $this->upsertConsignee($customerId, $trip);
@@ -91,6 +96,11 @@ readonly class TripService
             unset($data['seal_id']); // seal changes go through changeSeal endpoint
 
             $trip->update($data);
+
+            // Re-sync driver user if phone number changed
+            if (isset($data['driver_phone']) && $data['driver_phone'] !== $trip->driver_phone) {
+                $this->upsertDriverUser($trip->customer_id, $trip->fresh());
+            }
 
             if ($newStatus && $newStatus !== $previousStatus) {
                 $this->eventService->log($trip->fresh(), 'status_changed', [],
@@ -199,6 +209,53 @@ readonly class TripService
             ['vessel_name' => $data['vessel_name']], actorId: $by->id);
 
         return $trip->fresh();
+    }
+
+    private function upsertDriverUser(int $customerId, Trip $trip): void
+    {
+        $mode = $trip->transport_mode instanceof TripTransportationMode
+            ? $trip->transport_mode
+            : TripTransportationMode::from($trip->transport_mode);
+
+        if (!in_array($mode, [TripTransportationMode::Road, TripTransportationMode::Multimodal], true)) {
+            return;
+        }
+
+        if (empty($trip->driver_phone)) {
+            return;
+        }
+
+        $driverRole = Role::where('name', 'driver')->first();
+
+        if (!$driverRole) {
+            return;
+        }
+
+        $user = User::where('customer_id', $customerId)
+            ->where('mobile', $trip->driver_phone)
+            ->where('role_id', $driverRole->id)
+            ->first();
+
+        if ($user) {
+            // Update name if trip has a more specific one
+            if (!empty($trip->driver_name) && $user->name !== $trip->driver_name) {
+                $user->update(['name' => $trip->driver_name]);
+            }
+        } else {
+            $user = User::create([
+                'role_id' => $driverRole->id,
+                'customer_id' => $customerId,
+                'name' => $trip->driver_name ?? 'Driver ' . $trip->driver_phone,
+                // Internal synthetic email — drivers log in via mobile + password ideally,
+                // but we need a unique email for the users table
+                'email' => 'driver.' . $trip->driver_phone . '@customer-' . $customerId . '.internal',
+                'mobile' => $trip->driver_phone,
+                'password' => bcrypt($trip->driver_phone),
+                'status' => UserStatus::Active,
+            ]);
+        }
+
+        $trip->updateQuietly(['driver_user_id' => $user->id]);
     }
 
     private function upsertConsignor(int $customerId, Trip $trip): void

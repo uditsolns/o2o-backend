@@ -66,6 +66,24 @@ class RolePermissionSeeder extends Seeder
         'report.view',
     ];
 
+    // Can do everything ops-related but cannot manage users, wallet, pricing, or place orders
+    private array $operationsExecutivePermissions = [
+        'port.view',
+        'location.view',
+        'route.view',
+        'seal_order.view',
+        'seal.view', 'seal.assign',
+        'trip.view', 'trip.create', 'trip.update', 'trip.complete',
+        'trip.destination_confirm',
+        'document.upload', 'document.delete',
+        'report.view',
+    ];
+
+    // Minimal — view only their assigned trip, push location
+    private array $driverPermissions = [
+        'trip.view',
+    ];
+
     public function run(): void
     {
         // Upsert all permissions
@@ -84,5 +102,11 @@ class RolePermissionSeeder extends Seeder
         $ca->permissions()->sync(
             $map->only($this->customerAdminPermissions)->values()->all()
         );
+
+        $oe = Role::firstOrCreate(['name' => 'operations_executive'], ['description' => 'Creates and manages trips, confirms ePOD']);
+        $oe->permissions()->sync($map->only($this->operationsExecutivePermissions)->values()->all());
+
+        $driver = Role::firstOrCreate(['name' => 'driver'], ['description' => 'Driver — location push and trip view only']);
+        $driver->permissions()->sync($map->only($this->driverPermissions)->values()->all());
     }
 }

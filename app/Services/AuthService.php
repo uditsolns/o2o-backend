@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\CustomerOnboardingStatus;
 use App\Enums\UserStatus;
 use App\Models\User;
 use Illuminate\Auth\Events\PasswordReset;
@@ -53,7 +54,11 @@ class AuthService
             ]);
         }
 
-        // TODO: Add gate: do not allow users whos customers are not onboarded
+        if ($user->isClientUser() && $user->customer?->onboarding_status !== CustomerOnboardingStatus::Completed) {
+            throw ValidationException::withMessages([
+                'email' => ['Your account setup is not yet complete. Please contact your administrator.'],
+            ]);
+        }
 
         $user->update(['last_login_at' => now()]);
 

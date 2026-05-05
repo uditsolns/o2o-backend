@@ -12,6 +12,7 @@ return new class extends Migration {
             $table->id();
             $table->foreignId('customer_id')->constrained()->restrictOnDelete();
             $table->foreignId('created_by_id')->constrained('users')->restrictOnDelete();
+            $table->foreignId('driver_user_id')->nullable()->constrained('users')->nullOnDelete();
             $table->unsignedBigInteger('seal_id')->nullable();
             $table->string('trip_ref', 30)->unique();
             $table->enum('status', TripStatus::values())->default(TripStatus::Draft->value);

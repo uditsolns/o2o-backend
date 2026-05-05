@@ -77,4 +77,16 @@ class User extends Authenticatable
     {
         return $this->status === UserStatus::Active;
     }
+
+    public function hasRole(string $role): bool
+    {
+        return $this->relationLoaded('role')
+            ? $this->role->name == $role
+            : $this->role()->where('name', $role)->exis();
+    }
+
+    public function isDriver(): bool
+    {
+        return $this->hasRole('driver');
+    }
 }
