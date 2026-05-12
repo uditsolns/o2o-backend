@@ -21,9 +21,9 @@ class SepioSealAllocationPollJob implements ShouldQueue
 
     public function handle(SepioClient $client, SealService $sealService): void
     {
-        // Watch all orders that Sepio has in flight or has completed on their end.
-        // MfgCompleted is the most likely state to have a seal_range ready,
-        // but allocation can appear as early as InTransit.
+        // Watch orders in any Sepio-active status — allocation can arrive at any of these.
+        // MfgCompleted is included so that if the status sync job ran first and set that
+        // status, we can still ingest seals and then finalize the order here.
         $orders = SealOrder::with('customer')
             ->whereIn('status', [
                 SealOrderStatus::MfgPending,
@@ -48,7 +48,6 @@ class SepioSealAllocationPollJob implements ShouldQueue
                 ]);
             }
         });
-
     }
 
     private function pollForCustomer(
@@ -84,7 +83,7 @@ class SepioSealAllocationPollJob implements ShouldQueue
             try {
                 $allocation = $allocationMap[$order->sepio_order_id] ?? null;
                 if (!$allocation) continue;
-                $this->ingestAllocation($sealService, $order, $allocation);
+                $this->processAllocation($sealService, $order, $allocation);
             } catch (\Throwable $e) {
                 Log::error('SepioSealAllocationPollJob: order ingest failed', [
                     'order_id' => $order->id, 'error' => $e->getMessage(),
@@ -93,40 +92,57 @@ class SepioSealAllocationPollJob implements ShouldQueue
         }
     }
 
-    private function ingestAllocation(SealService $sealService, SealOrder $order, array $allocation): void
+    private function processAllocation(SealService $sealService, SealOrder $order, array $allocation): void
     {
         // seal_range: "SPPL10009259 - SPPL10009260"
         $range = $allocation['seal_range'] ?? null;
-
         if (!$range) return;
 
         $sealNumbers = $this->expandSealRange($range);
-
         if (empty($sealNumbers)) return;
 
         if (count($sealNumbers) !== $order->quantity) {
-            Log::warning('Sepio seal count mismatch', [
-                'order_id' => $order->id,
-                'expected' => $order->quantity,
-                'got' => count($sealNumbers),
+            Log::warning('SepioSealAllocationPollJob: seal count mismatch — skipping until correct range arrives', [
+                'order_id'   => $order->id,
+                'expected'   => $order->quantity,
+                'got'        => count($sealNumbers),
                 'seal_range' => $range,
             ]);
+            return; // wait for Sepio to correct the range
         }
 
-        try {
-            $sealService->ingestFromOrder($order, $sealNumbers, now()->toISOString());
-
-            Log::info('Seals ingested from Sepio allocation', [
+        // Idempotency: if seals are already ingested for this order, skip insertion
+        // but still check whether we can complete the order (handles the case where
+        // this job ran before the status sync job advanced to MfgCompleted).
+        if ($order->seals()->exists()) {
+            Log::info('SepioSealAllocationPollJob: seals already ingested, checking completion', [
                 'order_id' => $order->id,
-                'from_status' => $order->status->value,
-                'seal_count' => count($sealNumbers),
             ]);
-        } catch (\Throwable $e) {
-            Log::error('Seal ingestion failed', [
-                'order_id' => $order->id,
-                'error' => $e->getMessage(),
-            ]);
+            $sealService->completeOrderIfSealsReady($order->fresh());
+            return;
         }
+
+        // Ingest seals WITHOUT completing the order.
+        // Seals are "not activated" on Sepio's side until the order is fully done.
+        // completeOrderIfSealsReady() will finalize the order once both conditions are met:
+        //   1) seals ingested (done here)
+        //   2) order status = MfgCompleted (done by SepioOrderStatusSyncJob)
+        $sealService->ingestFromOrder(
+            $order,
+            $sealNumbers,
+            now()->toISOString(),
+            complete: false   // ← do NOT complete yet
+        );
+
+        Log::info('SepioSealAllocationPollJob: seals ingested (order not yet completed)', [
+            'order_id'   => $order->id,
+            'seal_count' => count($sealNumbers),
+            'order_status' => $order->status->value,
+        ]);
+
+        // If the status sync job already advanced this order to MfgCompleted before
+        // seals arrived, we can complete it right now.
+        $sealService->completeOrderIfSealsReady($order->fresh());
     }
 
     /**
