@@ -180,7 +180,14 @@ class SepioOrderStatusSyncJob implements ShouldQueue
      */
     private function mapSepioStatus(string $sepioStatus): ?SealOrderStatus
     {
-        return match (strtolower(trim($sepioStatus))) {
+        $normalized = str($sepioStatus)
+            ->trim()
+            ->lower()
+            ->replace(['-', '_'], ' ')
+            ->squish()
+            ->toString();
+
+        return match ($normalized) {
             'placed' => SealOrderStatus::OrderPlaced,
             'in progress' => SealOrderStatus::InProgress,
             'in transit' => SealOrderStatus::InTransit,
