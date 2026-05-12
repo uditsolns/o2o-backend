@@ -77,11 +77,11 @@ readonly class SealService
 
         // Check availability with Sepio before assigning
         if ($customer->sepio_company_id) {
-//            $check = $this->sepioSealService->checkSealAvailability($customer, $seal);
-//
-//            if (!$check['available']) {
-//                abort(422, "Seal {$seal->seal_number} is not available on seal provider: {$check['message']}");
-//            }
+           $check = $this->sepioSealService->checkSealAvailability($customer, $seal);
+
+           if (!$check['available']) {
+               abort(422, "Seal {$seal->seal_number} is not available on seal provider: {$check['message']}");
+           }
         }
 
         $seal->update([
