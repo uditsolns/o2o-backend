@@ -58,10 +58,12 @@ class SepioSealAllocationPollJob implements ShouldQueue
     ): void
     {
         // Sepio allocation pull supports max 2-day window
+        $end = now();
+        $start = $end->copy()->subDays(2);
         $response = $client->postAs($customer, '/api/v1/seal/seal-allocation/pull', [
             'company_id' => $customer->sepio_company_id,
-            'start_datetime' => now()->subDays(2)->format('Y-m-d H:i:s.v'),
-            'end_datetime' => now()->format('Y-m-d H:i:s.v'),
+            'start_datetime' => $start->format('Y-m-d H:i:s.v'),
+            'end_datetime' => $end->format('Y-m-d H:i:s.v'),
         ]);
 
         if ($response->failed()) {
