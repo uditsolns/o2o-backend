@@ -1,6 +1,8 @@
 <?php
 
 use App\Console\Commands\SeedSepioPortsCommand;
+use App\Jobs\CheckPendingTrackingRequestsJob;
+use App\Jobs\ContainerSyncJob;
 use App\Jobs\FastTagPollJob;
 use App\Jobs\SepioOrderStatusSyncJob;
 use App\Jobs\SepioSealAllocationPollJob;
@@ -22,17 +24,28 @@ Schedule::job(SepioVerificationStatusPollJob::class)
 Schedule::job(SepioOrderStatusSyncJob::class)
     ->everyFifteenMinutes();
 
-// Seal allocation: once Sepio dispatches, grab the seal range, ingest and complete the order.
+// Seal allocation: once Sepio dispatches, grab the seal range and ingest.
 Schedule::job(SepioSealAllocationPollJob::class)
     ->hourly();
 
-// Seal scan status: update sepio_status + scan logs for active trip seals
+// Seal scan status: update sepio_status + scan logs for active trip seals.
 Schedule::job(SepioSealStatusSyncJob::class)
     ->everyFifteenMinutes();
 
-// FastTag: poll every 15 min for active road/multimodal trips
+// FastTag: poll every 15 min for active road/multimodal trips.
 Schedule::job(FastTagPollJob::class)
     ->everyFifteenMinutes();
 
-// AIS vessel position: every 30 min for active sea legs
-Schedule::job(VesselAisPollJob::class)->everyThirtyMinutes();
+// AIS vessel position: every 30 min for active sea legs.
+Schedule::job(VesselAisPollJob::class)
+    ->everyThirtyMinutes();
+
+// Container tracking: poll Kpler every 30 min for pending tracking requests
+// that haven't fired their webhook yet.
+Schedule::job(CheckPendingTrackingRequestsJob::class)
+    ->everyThirtyMinutes();
+
+// Container tracking: nightly safety-net re-sync for all active trackings.
+// Compensates for any missed webhooks during the day.
+Schedule::job(ContainerSyncJob::class)
+    ->dailyAt('00:30');

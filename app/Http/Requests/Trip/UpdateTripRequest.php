@@ -73,8 +73,8 @@ class UpdateTripRequest extends FormRequest
             'destination_port_category' => ['sometimes', 'nullable', 'string', 'max:20'],
             'dispatch_date' => ['sometimes', 'nullable', 'date'],
             'expected_delivery_date' => ['sometimes', 'nullable', 'date'],
-            // Intermediate status transitions only (not in_transit or completed — those have dedicated endpoints)
-            'status' => ['sometimes', Rule::in(['at_port', 'on_vessel', 'vessel_arrived', 'delivered'])],
+            // bill_of_lading is still manual — Kpler does not provide it
+            'bill_of_lading' => ['sometimes', 'nullable', 'string', 'max:100'],
         ];
     }
 }

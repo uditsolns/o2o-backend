@@ -18,6 +18,9 @@ class TripContainerTrackingResource extends JsonResource
             'arrival_delay_days' => $this->arrival_delay_days,
             'initial_carrier_eta' => $this->initial_carrier_eta,
             'has_rollover' => $this->has_rollover,
+            'eta_history' => $this->eta_history ?? [],
+            'rollover_history' => $this->rollover_history ?? [],
+            'transshipment_ports' => $this->transshipment_ports ?? [],
             'pol' => ['name' => $this->pol_name, 'unlocode' => $this->pol_unlocode],
             'pod' => ['name' => $this->pod_name, 'unlocode' => $this->pod_unlocode],
             'current_vessel' => [

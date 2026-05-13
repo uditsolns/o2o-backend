@@ -19,11 +19,17 @@ class TripContainerTracking extends Model
         'current_vessel_lat', 'current_vessel_lng', 'current_vessel_speed',
         'current_vessel_heading', 'current_vessel_geo_area', 'current_vessel_position_at',
         'last_synced_at', 'raw_shipment_snapshot',
+        'eta_history',
+        'rollover_history',
+        'transshipment_ports',
     ];
 
     protected $casts = [
         'has_rollover' => 'boolean',
         'raw_shipment_snapshot' => 'array',
+        'eta_history' => 'array',
+        'rollover_history' => 'array',
+        'transshipment_ports' => 'array',
         'initial_carrier_eta' => 'datetime',
         'current_vessel_position_at' => 'datetime',
         'last_synced_at' => 'datetime',
