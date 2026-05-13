@@ -56,37 +56,35 @@ class ContainerTrackingService
             ]],
         ]);
 
+        // Check body-level errors FIRST (Kpler returns HTTP 200 even for errors)
+        $errors = $response->json('errors', []);
+
+        $alreadyExists = collect($errors)->first(
+            fn($e) => ($e['code'] ?? '') === 'resource_already_exists'
+        );
+
+        if ($alreadyExists) {
+            $aboutUrl = $alreadyExists['links']['about'] ?? null;
+            $existingRequestId = $aboutUrl
+                ? basename(parse_url($aboutUrl, PHP_URL_PATH))
+                : null;
+
+            $record->update([
+                'mt_tracking_request_id' => $existingRequestId,
+                'tracking_status' => 'pending',
+                'failed_reason' => null,
+            ]);
+
+            Log::info('ContainerTrackingService: container already registered — reusing', [
+                'trip_id' => $trip->id,
+                'tracking_request_id' => $existingRequestId,
+            ]);
+
+            return $record->fresh();
+        }
+
+        // Now check for genuine HTTP failures
         if ($response->failed()) {
-            $errors = $response->json('errors', []);
-
-            // Graceful recovery: Kpler already has a tracking request for this
-            // container + SCAC. Extract the existing request ID from the error
-            // response and reuse it — this is not a failure.
-            $alreadyExists = collect($errors)->first(
-                fn($e) => ($e['code'] ?? '') === 'resource_already_exists'
-            );
-
-            if ($alreadyExists) {
-                $aboutUrl = $alreadyExists['links']['about'] ?? null;
-                $existingRequestId = $aboutUrl ? basename(parse_url($aboutUrl, PHP_URL_PATH)) : null;
-
-                $record->update([
-                    'mt_tracking_request_id' => $existingRequestId,
-                    'tracking_status' => 'pending',
-                    'failed_reason' => null,
-                ]);
-
-                Log::info('ContainerTrackingService: container already registered on Kpler — reusing request', [
-                    'trip_id' => $trip->id,
-                    'container_number' => $trip->container_number,
-                    'carrier_scac' => $trip->carrier_scac,
-                    'tracking_request_id' => $existingRequestId,
-                ]);
-
-                return $record->fresh();
-            }
-
-            // Genuine registration failure
             $failedReason = $response->json('errors.0.description')
                 ?? $response->json('message')
                 ?? "HTTP {$response->status()}";
@@ -106,6 +104,7 @@ class ContainerTrackingService
             return $record;
         }
 
+        // Success path
         $item = $response->json('data.0') ?? $response->json('data') ?? null;
 
         $trackingRequestId =

@@ -231,46 +231,55 @@ class ContainerTrackingWebhookController extends Controller
         $shipment = collect($this->included($request))
             ->firstWhere('type', 'shipment');
 
-        // Fallback from top-level relationship only
         if (!$shipment) {
-            $shipmentId =
-                $request->input('data.relationships.shipment.data.shipmentId')
-                ?? $request->input('data.relationships.shipment.data.id');
-
-            if ($shipmentId) {
-                $record = TripContainerTracking::where(
-                    'mt_shipment_id',
-                    $shipmentId
-                )->first();
-
-                if ($record) {
-                    SyncContainerMilestonesJob::dispatch($record);
-                }
-            }
-
-            Log::warning('shipment_updated missing shipment include');
+            // ... existing fallback unchanged
             return;
         }
 
-        // Snapshot update using your service
-        $this->service->processWebhookShipment($shipment);
-
-        // Queue full timeline sync
+        // ── NEW: resolve & pre-link mt_shipment_id before processing ──────────
         $shipmentId = $this->shipmentId($shipment);
 
-        if (!$shipmentId) {
-            return;
+        if ($shipmentId) {
+            $record = TripContainerTracking::where('mt_shipment_id', $shipmentId)->first();
+
+            // Not found by shipment ID — Kpler sent shipment_updated before tracking_request_succeeded.
+            // Try linking via tracking request ID.
+            if (!$record) {
+                $trackingRequestId =
+                    data_get($shipment, 'relationships.trackingRequest.data.trackingRequestId')
+                    ?? data_get($shipment, 'relationships.trackingRequest.data.id');
+
+                if ($trackingRequestId) {
+                    $record = TripContainerTracking::where(
+                        'mt_tracking_request_id', $trackingRequestId
+                    )->first();
+
+                    if ($record) {
+                        // Stamp the shipment ID now so processWebhookShipment can find it
+                        $record->update([
+                            'mt_shipment_id' => $shipmentId,
+                            'tracking_status' => 'active',
+                        ]);
+
+                        Log::info('shipment_updated: linked shipment via tracking_request_id (out-of-order)', [
+                            'trip_id' => $record->trip_id,
+                            'shipment_id' => $shipmentId,
+                            'tracking_request_id' => $trackingRequestId,
+                        ]);
+                    }
+                }
+            }
         }
 
-        $record = TripContainerTracking::where(
-            'mt_shipment_id',
-            $shipmentId
-        )->first();
+
+        $this->service->processWebhookShipment($shipment);
+
+        if (!$shipmentId) return;
+
+        $record = TripContainerTracking::where('mt_shipment_id', $shipmentId)->first();
 
         if (!$record) {
-            Log::warning('shipment_updated unknown shipment', [
-                'shipment_id' => $shipmentId,
-            ]);
+            Log::warning('shipment_updated unknown shipment', ['shipment_id' => $shipmentId]);
             return;
         }
 
