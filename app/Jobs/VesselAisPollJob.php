@@ -23,19 +23,15 @@ class VesselAisPollJob implements ShouldQueue
 
     public function handle(VesselAisService $aisService, TripTrackingService $trackingService): void
     {
-//        $trips = Trip::whereIn('status', [
-//            TripStatus::OnVessel,
-//            TripStatus::InTransshipment,
-//        ])
-//            ->whereIn('transport_mode', [
-//                TripTransportationMode::Sea,
-//                TripTransportationMode::Multimodal,
-//            ])
-//            ->whereNotNull('vessel_imo_number')
-//            ->get();
-
-        $trips = Trip::whereNotNull('vessel_imo_number')
-            ->whereIn('id', [20])
+        $trips = Trip::whereIn('status', [
+            TripStatus::OnVessel,
+            TripStatus::InTransshipment,
+        ])
+            ->whereIn('transport_mode', [
+                TripTransportationMode::Sea,
+                TripTransportationMode::Multimodal,
+            ])
+            ->whereNotNull('vessel_imo_number')
             ->get();
 
         if ($trips->isEmpty()) return;

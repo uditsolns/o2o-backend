@@ -2,14 +2,13 @@
 
 namespace App\Services;
 
-use App\Enums\SealStatus;
 use App\Enums\SealOrderStatus;
+use App\Enums\SealStatus;
 use App\Enums\SepioSealStatus;
 use App\Enums\TripStatus;
 use App\Models\Seal;
 use App\Models\SealOrder;
 use App\Models\SealStatusLog;
-use App\Models\Trip;
 use App\Models\TripEvent;
 use App\Services\Sepio\SepioSealService;
 use Illuminate\Support\Facades\DB;
@@ -45,16 +44,18 @@ readonly class SealService
             $now = now();
 
             $records = array_map(fn(string $number) => [
-                'customer_id'   => $order->customer_id,
+                'customer_id' => $order->customer_id,
                 'seal_order_id' => $order->id,
-                'trip_id'       => null,
-                'seal_number'   => $number,
-                'status'        => SealStatus::InInventory->value,
-                'sepio_status'  => 'unknown',
-                'last_scan_at'  => null,
-                'delivered_at'  => null,
-                'created_at'    => $now,
-                'updated_at'    => $now,
+                'trip_id' => null,
+                'seal_number' => $number,
+                'status' => $complete
+                    ? SealStatus::InInventory->value
+                    : SealStatus::Inactive->value,   // blocked until order completes
+                'sepio_status' => 'unknown',
+                'last_scan_at' => null,
+                'delivered_at' => null,
+                'created_at' => $now,
+                'updated_at' => $now,
             ], $sealNumbers);
 
             // Insert in chunks to avoid packet size limits
@@ -64,7 +65,7 @@ readonly class SealService
 
             if ($complete) {
                 $order->update([
-                    'status'            => SealOrderStatus::Completed,
+                    'status' => SealOrderStatus::Completed,
                     'seals_delivered_at' => $now,
                     // Only set dispatched_at as fallback if not already stamped by the status sync job
                     ...(!$order->seals_dispatched_at ? ['seals_dispatched_at' => $dispatchedAt] : []),
@@ -109,12 +110,19 @@ readonly class SealService
             return;
         }
 
-        $order->update([
-            'status'            => SealOrderStatus::Completed,
-            'seals_delivered_at' => $order->seals_delivered_at ?? now(),
-        ]);
+        DB::transaction(function () use ($order) {
+            // Activate all seals for this order — they are now usable
+            $order->seals()
+                ->where('status', SealStatus::Inactive)
+                ->update(['status' => SealStatus::InInventory->value]);
 
-        Log::info('SealService: order marked Completed — MfgCompleted + all seals ingested', [
+            $order->update([
+                'status' => SealOrderStatus::Completed,
+                'seals_delivered_at' => $order->seals_delivered_at ?? now(),
+            ]);
+        });
+
+        Log::info('SealService: order completed — seals activated', [
             'order_id' => $order->id,
         ]);
     }
@@ -134,16 +142,16 @@ readonly class SealService
 
         // Check availability with Sepio before assigning
         if ($customer->sepio_company_id) {
-           $check = $this->sepioSealService->checkSealAvailability($customer, $seal);
+            $check = $this->sepioSealService->checkSealAvailability($customer, $seal);
 
-           if (!$check['available']) {
-               abort(422, "Seal {$seal->seal_number} is not available on seal provider: {$check['message']}");
-           }
+            if (!$check['available']) {
+                abort(422, "Seal {$seal->seal_number} is not available on seal provider: {$check['message']}");
+            }
         }
 
         $seal->update([
             'trip_id' => $tripId,
-            'status'  => SealStatus::Assigned,
+            'status' => SealStatus::Assigned,
         ]);
 
         return $seal->fresh();
@@ -156,7 +164,7 @@ readonly class SealService
     {
         $seal->update([
             'trip_id' => null,
-            'status'  => SealStatus::InInventory,
+            'status' => SealStatus::InInventory,
         ]);
 
         return $seal->fresh();
@@ -168,25 +176,25 @@ readonly class SealService
      */
     public function syncStatus(Seal $seal, array $sepioPayload): Seal
     {
-        $status       = $sepioPayload['status'];
+        $status = $sepioPayload['status'];
         $scanLocation = $sepioPayload['location'] ?? null;
-        $scannedLat   = $sepioPayload['lat'] ?? null;
-        $scannedLng   = $sepioPayload['lng'] ?? null;
-        $scannedBy    = $sepioPayload['scanned_by'] ?? null;
-        $checkedAt    = $sepioPayload['scanned_at'] ?? now();
+        $scannedLat = $sepioPayload['lat'] ?? null;
+        $scannedLng = $sepioPayload['lng'] ?? null;
+        $scannedBy = $sepioPayload['scanned_by'] ?? null;
+        $checkedAt = $sepioPayload['scanned_at'] ?? now();
 
         DB::transaction(function () use ($seal, $status, $scanLocation, $scannedLat, $scannedLng, $scannedBy, $checkedAt, $sepioPayload) {
             SealStatusLog::create([
-                'customer_id'  => $seal->customer_id,
-                'seal_id'      => $seal->id,
-                'trip_id'      => $seal->trip_id,
-                'status'       => $status,
+                'customer_id' => $seal->customer_id,
+                'seal_id' => $seal->id,
+                'trip_id' => $seal->trip_id,
+                'status' => $status,
                 'scan_location' => $scanLocation,
-                'scanned_lat'  => $scannedLat,
-                'scanned_lng'  => $scannedLng,
-                'scanned_by'   => $scannedBy,
+                'scanned_lat' => $scannedLat,
+                'scanned_lng' => $scannedLng,
+                'scanned_by' => $scannedBy,
                 'raw_response' => $sepioPayload,
-                'checked_at'   => $checkedAt,
+                'checked_at' => $checkedAt,
             ]);
 
             $updates = [
@@ -214,15 +222,15 @@ readonly class SealService
                     $trip->update(['status' => TripStatus::AtPort]);
 
                     TripEvent::create([
-                        'customer_id'     => $trip->customer_id,
-                        'trip_id'         => $trip->id,
-                        'event_type'      => 'status_changed',
+                        'customer_id' => $trip->customer_id,
+                        'trip_id' => $trip->id,
+                        'event_type' => 'status_changed',
                         'previous_status' => TripStatus::InTransit,
-                        'new_status'      => TripStatus::AtPort,
-                        'event_data'      => ['scan_location' => $scanLocation, 'triggered_by' => 'seal_scan'],
-                        'actor_type'      => 'system',
-                        'actor_id'        => null,
-                        'created_at'      => now(),
+                        'new_status' => TripStatus::AtPort,
+                        'event_data' => ['scan_location' => $scanLocation, 'triggered_by' => 'seal_scan'],
+                        'actor_type' => 'system',
+                        'actor_id' => null,
+                        'created_at' => now(),
                     ]);
                 }
             }

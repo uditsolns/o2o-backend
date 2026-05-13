@@ -2,11 +2,7 @@
 
 namespace Database\Seeders;
 
-use App\Enums\UserStatus;
-use App\Models\Role;
-use App\Models\User;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\Hash;
 
 class DatabaseSeeder extends Seeder
 {
@@ -17,19 +13,7 @@ class DatabaseSeeder extends Seeder
         $this->command->info('');
 
         $this->call(RolePermissionSeeder::class);
-
-        $role = Role::where('name', 'admin')->firstOrFail();
-        User::firstOrCreate(
-            ['email' => 'admin@admin.com'],
-            [
-                'role_id' => $role->id,
-                'customer_id' => null,
-                'name' => 'Platform Admin',
-                'password' => Hash::make('password'),
-                'status' => UserStatus::Active,
-            ]
-        );
-
+        $this->call(UserSeeder::class);
         $this->call(TestPortSeeder::class);
         $this->call(CustomerSeeder::class);
         $this->call(CustomerDocumentSignatorySeeder::class);
@@ -49,32 +33,5 @@ class DatabaseSeeder extends Seeder
 
         $this->command->info('');
         $this->command->info('✅  DatabaseSeeder complete.');
-        $this->command->info('');
-        $this->printCredentials();
-    }
-
-    private function printCredentials(): void
-    {
-        $this->command->table(
-            ['Role', 'Email', 'Password', 'Onboarding Status'],
-            [
-                ['Platform Admin', 'admin@admin.com', 'password', 'N/A'],
-                ['Customer Admin', 'user.*@sharmaexports.test', 'password', 'pending'],
-                ['Customer Admin', 'user.*@mehtaintl.test', 'password', 'submitted'],
-                ['Customer Admin', 'user.*@pateltraders.test', 'password', 'il_parked'],
-                ['Customer Admin', 'user.*@raoglobal.test', 'password', 'il_approved'],
-                ['Operations Executive', 'ops.*@raoglobal.test', 'password', 'il_approved'],
-                ['Customer Admin', 'user.*@vermalogistics.test', 'password', 'completed ✅'],
-                ['Operations Executive', 'ops.*@vermalogistics.test', 'password', 'completed ✅'],
-                ['Customer Admin', 'user.*@iyerimpex.test', 'password', 'completed ✅'],
-                ['Operations Executive', 'ops.*@iyerimpex.test', 'password', 'completed ✅'],
-                ['Driver (Verma)', 'driver.9871122334@customer-*.internal', 'password', 'completed ✅'],
-                ['Driver (Verma)', 'driver.9811234567@customer-*.internal', 'password', 'completed ✅'],
-                ['Driver (Iyer)', 'driver.9840123456@customer-*.internal', 'password', 'completed ✅'],
-                // (more drivers created per trip — check users table filtered by role)
-            ]
-        );
-        $this->command->info('  (* = auto-assigned ID — check users table for exact email)');
-        $this->command->info('');
     }
 }

@@ -4,6 +4,7 @@ namespace App\Enums;
 
 enum SealStatus: string
 {
+    case Inactive = 'inactive';
     case InInventory = 'in_inventory';
     case Assigned = 'assigned';
     case InTransit = 'in_transit';
