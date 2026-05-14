@@ -15,6 +15,9 @@ class UpdateTripRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'uses_sepio_seal' => ['sometimes', 'boolean'],
+            'shipping_bill_no' => ['sometimes', 'nullable', 'string', 'regex:/^\d{7}$/', 'max:20'],
+            'shipping_bill_date' => ['sometimes', 'nullable', 'date'],
             'driver_name' => ['sometimes', 'nullable', 'string', 'max:255'],
             'driver_license' => ['sometimes', 'nullable', 'string', 'max:50'],
             'driver_aadhaar' => ['sometimes', 'nullable', 'string', 'max:20'],

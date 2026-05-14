@@ -18,12 +18,21 @@ class StoreTripRequest extends FormRequest
         $mode = $this->input('transport_mode');
         $isRoad = in_array($mode, ['road', 'multimodal']);
         $isSea = in_array($mode, ['sea', 'multimodal']);
+        $usesSeals = $this->boolean('uses_sepio_seal');
 
         return [
             'customer_id' => ['nullable', Rule::requiredIf($this->user()->isPlatformUser()), 'integer', 'exists:customers,id'],
             'trip_type' => ['required', Rule::enum(TripType::class)],
             'transport_mode' => ['required', Rule::enum(TripTransportationMode::class)],
-            'seal_id' => ['required', 'integer', 'exists:seals,id'],
+
+            // Seal — only required when user opts into Sepio seals
+            'uses_sepio_seal' => ['required', 'boolean'],
+            'seal_id' => [
+                Rule::requiredIf($usesSeals),
+                'nullable',
+                'integer',
+                'exists:seals,id',
+            ],
 
             // Driver — required for road / multimodal
             'driver_name' => [Rule::requiredIf($isRoad), 'nullable', 'string', 'max:255'],
@@ -43,8 +52,17 @@ class StoreTripRequest extends FormRequest
             'rc_verification_payload' => ['nullable', 'json'],
 
             // Container — required for sea / multimodal
-            'container_number' => ['required', 'nullable', 'string', 'max:50'],
-            'container_type' => ['required', 'nullable', 'string', 'max:20'],
+            'container_number' => [Rule::requiredIf($isSea), 'nullable', 'string', 'max:50'],
+            'container_type' => ['nullable', 'string', 'max:20'],
+
+            // Carrier SCAC — required for sea/multimodal so Kpler tracking can be registered
+            'carrier_scac' => [
+                Rule::requiredIf($isSea),
+                'nullable',
+                'string',
+                'max:10',
+                'regex:/^[A-Z0-9]{2,10}$/',
+            ],
 
             // Cargo — required always
             'cargo_type' => ['required', 'string', 'max:100'],
@@ -52,7 +70,22 @@ class StoreTripRequest extends FormRequest
             'invoice_number' => ['required', 'string', 'max:100'],
             'invoice_date' => ['required', 'date'],
             'eway_bill_number' => ['nullable', 'string', 'regex:/^\d{7,15}$/', 'max:20'],
-            'eway_bill_validity_date' => ['required', 'date'],
+            'eway_bill_validity_date' => ['nullable', 'date'],
+
+            // Shipping bill — required when uses_sepio_seal is true (needed for seal installation)
+            // Optional otherwise; 7-digit numeric
+            'shipping_bill_no' => [
+                Rule::requiredIf($usesSeals),
+                'nullable',
+                'string',
+                'regex:/^\d{7}$/',
+                'max:20',
+            ],
+            'shipping_bill_date' => [
+                Rule::requiredIf($usesSeals),
+                'nullable',
+                'date',
+            ],
 
             // Cargo — optional
             'hs_code' => ['nullable', 'string', 'max:20'],
@@ -89,36 +122,29 @@ class StoreTripRequest extends FormRequest
             'delivery_lat' => ['nullable', 'numeric', 'between:-90,90'],
             'delivery_lng' => ['nullable', 'numeric', 'between:-180,180'],
 
-            // Origin port — required for sea / multimodal
-            'origin_port_name' => [Rule::requiredIf($isSea), 'nullable', 'string', 'max:255'],
-            'origin_port_code' => [Rule::requiredIf($isSea), 'nullable', 'string', 'max:20'],
-            'origin_port_category' => [Rule::requiredIf($isSea), 'string', 'max:20'],
+            // Origin port — NOW OPTIONAL even for sea/multimodal (Kpler will fill)
+            'origin_port_name' => ['nullable', 'string', 'max:255'],
+            'origin_port_code' => ['nullable', 'string', 'max:20'],
+            'origin_port_category' => ['nullable', 'string', 'max:20'],
 
-            // Destination port — required for sea / multimodal
-            'destination_port_name' => [Rule::requiredIf($isSea), 'nullable', 'string', 'max:255'],
-            'destination_port_code' => [Rule::requiredIf($isSea), 'nullable', 'string', 'max:20'],
-            'destination_port_category' => [Rule::requiredIf($isSea), 'string', 'max:20'],
+            // Destination port — NOW OPTIONAL even for sea/multimodal (Kpler will fill)
+            'destination_port_name' => ['nullable', 'string', 'max:255'],
+            'destination_port_code' => ['nullable', 'string', 'max:20'],
+            'destination_port_category' => ['nullable', 'string', 'max:20'],
 
             // Timeline
-            'dispatch_date' => ['required', 'date'],
-            'expected_delivery_date' => ['required', 'date', 'after_or_equal:dispatch_date'],
+            'dispatch_date' => ['nullable', 'date'],  // defaults to today() if absent
+            'expected_delivery_date' => ['nullable', 'date', 'after_or_equal:dispatch_date'],
 
-            // Vessel — optional at creation (added via /vessel-info later)
+            // Vessel — optional at creation
             'vessel_name' => ['nullable', 'string', 'max:255'],
             'vessel_imo_number' => ['nullable', 'string', 'max:20'],
             'voyage_number' => ['nullable', 'string', 'max:100'],
             'bill_of_lading' => ['nullable', 'string', 'max:100'],
             'eta' => ['nullable', 'date'],
             'etd' => ['nullable', 'date'],
-            'carrier_scac' => [
-                Rule::requiredIf($isSea),
-                'nullable',
-                'string',
-                'max:10',
-                'regex:/^[A-Z0-9]{2,10}$/',
-            ],
 
-            // Segments (optional)
+            // Segments
             'segments' => ['nullable', 'array'],
             'segments.*.sequence' => ['required', 'integer', 'min:1'],
             'segments.*.source_name' => ['required', 'string', 'max:255'],
@@ -133,6 +159,10 @@ class StoreTripRequest extends FormRequest
     {
         return [
             'eway_bill_number.regex' => 'Shipping bill number must be numeric digits only (7–15 digits).',
+            'shipping_bill_no.regex' => 'Shipping bill number must be exactly 7 digits.',
+            'seal_id.required_if' => 'A seal must be selected when using Sepio seals.',
+            'shipping_bill_no.required_if' => 'Shipping bill number is required when using Sepio seals.',
+            'shipping_bill_date.required_if' => 'Shipping bill date is required when using Sepio seals.',
         ];
     }
 }

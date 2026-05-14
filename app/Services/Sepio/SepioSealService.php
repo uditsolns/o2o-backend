@@ -97,10 +97,10 @@ readonly class SepioSealService
             'sealNo' => $matches[2],
             'companyId' => $customer->sepio_company_id,
             'createdBy' => $customer->primary_contact_email ?? $customer->email,
-            'shippingBillNo' => [$trip->invoice_number ?? ''],
+            'shippingBillNo' => [$trip->shipping_bill_no ?? ''],
             'shippingBillDate' => [
-                $trip->invoice_date
-                    ? $trip->invoice_date->format('d-m-Y')
+                $trip->shipping_bill_date
+                    ? $trip->shipping_bill_date->format('d-m-Y')
                     : now()->format('d-m-Y'),
             ],
             'sealingDate' => $sealingDate,

@@ -94,6 +94,14 @@ class TripController extends Controller
     {
         $this->authorize('update', $trip);
 
+        // Since trips auto-start on creation, this endpoint is a no-op for most trips.
+        // Kept for manual/draft scenarios.
+        abort_if(
+            $trip->status !== TripStatus::Draft,
+            422,
+            'Trip is already started or completed and cannot be re-started.'
+        );
+
         $trip = $this->service->startTrip($trip, $request->validated(), $request->user());
 
         return response()->json(new TripResource($trip->load('seal')));
@@ -103,7 +111,17 @@ class TripController extends Controller
     {
         $this->authorize('update', $trip);
 
-        abort_if($trip->status !== TripStatus::Draft, 422, 'Seal can only be changed while the trip is in Draft status.');
+        abort_if(
+            $trip->isLocked(),
+            422,
+            'Seal cannot be changed on a completed trip.'
+        );
+
+        abort_if(
+            $trip->status === TripStatus::InTransit && $trip->uses_sepio_seal,
+            422,
+            'Seal cannot be changed after Sepio seal installation has been initiated.'
+        );
 
         $trip = $this->service->changeSeal($trip, $request->validated('seal_id'), $request->user());
 

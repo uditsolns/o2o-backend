@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\{BelongsTo, HasMany, HasOne};
 class Trip extends Model
 {
     protected $fillable = [
-        'customer_id', 'created_by_id', 'driver_user_id', 'seal_id', 'trip_ref',
+        'customer_id', 'created_by_id', 'driver_user_id', 'seal_id', 'uses_sepio_seal', 'trip_ref',
         'status', 'trip_type', 'transport_mode', 'risk_score',
         'driver_name', 'driver_license', 'driver_aadhaar', 'driver_phone',
         'is_driver_license_verified', 'is_driver_aadhaar_verified',
@@ -23,6 +23,7 @@ class Trip extends Model
         'gross_weight', 'net_weight', 'weight_unit',
         'quantity', 'quantity_unit', 'declared_cargo_value',
         'invoice_number', 'invoice_date', 'eway_bill_number', 'eway_bill_validity_date',
+        'shipping_bill_no', 'shipping_bill_date',
         'dispatch_location_name', 'dispatch_address', 'dispatch_city', 'dispatch_state',
         'dispatch_pincode', 'dispatch_country', 'dispatch_contact_person',
         'dispatch_contact_number', 'dispatch_contact_email', 'dispatch_lat', 'dispatch_lng',
@@ -64,6 +65,8 @@ class Trip extends Model
         'last_vessel_tracked_at' => 'datetime',
         'last_vessel_position_at' => 'datetime',
         'customs_hold' => 'boolean',
+        'uses_sepio_seal' => 'boolean',
+        'shipping_bill_date' => 'date',
     ];
 
     protected static function booted(): void

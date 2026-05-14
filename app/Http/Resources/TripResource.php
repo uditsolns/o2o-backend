@@ -14,6 +14,7 @@ class TripResource extends JsonResource
         return [
             'id' => $this->id,
             'trip_ref' => $this->trip_ref,
+            'uses_sepio_seal' => $this->uses_sepio_seal,
             'status' => $this->status,
             'trip_type' => $this->trip_type,
             'transport_mode' => $this->transport_mode,
@@ -53,6 +54,8 @@ class TripResource extends JsonResource
             'declared_cargo_value' => $this->declared_cargo_value,
             'invoice_number' => $this->invoice_number,
             'invoice_date' => $this->invoice_date,
+            'shipping_bill_no' => $this->shipping_bill_no,
+            'shipping_bill_date' => $this->shipping_bill_date,
             'eway_bill_number' => $this->eway_bill_number,
             'eway_bill_validity_date' => $this->eway_bill_validity_date,
             // Dispatch

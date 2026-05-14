@@ -561,16 +561,14 @@ class ContainerTrackingService
         $pol = $attrs['portOfLoading'] ?? null;
         $pod = $attrs['portOfDischarge'] ?? null;
 
-        // Vessel name — prefer currentVessel, fallback to loading vessel at POL
-        $vesselName = $currentVessel['name']
-            ?? data_get($pol, 'loadingVessel.name');
+        // Vessel name
+        $vesselName = $currentVessel['name'] ?? data_get($pol, 'loadingVessel.name');
         if ($vesselName) {
             $updates['vessel_name'] = $vesselName;
         }
 
         // Vessel IMO
-        $vesselImo = $currentVessel['imo']
-            ?? data_get($pol, 'loadingVessel.imo');
+        $vesselImo = $currentVessel['imo'] ?? data_get($pol, 'loadingVessel.imo');
         if ($vesselImo) {
             $updates['vessel_imo_number'] = (string)$vesselImo;
         }
@@ -581,13 +579,13 @@ class ContainerTrackingService
             $updates['voyage_number'] = $voyageNumber;
         }
 
-        // ETD from POL departure
+        // ETD from POL
         $polDepartureTs = data_get($pol, 'departureDate.timestamp');
         if ($polDepartureTs) {
             $updates['etd'] = Carbon::parse($polDepartureTs);
         }
 
-        // ETA from POD planned arrival (actual arrival triggers status change, not ETA update)
+        // ETA from POD planned arrival
         $podArrivalStatus = data_get($pod, 'arrivalDate.status');
         $podArrivalTs = data_get($pod, 'arrivalDate.timestamp');
         if ($podArrivalStatus === 'planned' && $podArrivalTs) {
@@ -597,18 +595,18 @@ class ContainerTrackingService
             }
         }
 
-        // Origin port — only fill if not already set by user
+        // Origin port — Kpler always wins (guard removed)
         $polUnlocode = data_get($pol, 'port.unlocode');
         $polName = data_get($pol, 'port.name');
-        if ($polUnlocode && !$trip->origin_port_code) {
+        if ($polUnlocode) {
             $updates['origin_port_code'] = $polUnlocode;
             $updates['origin_port_name'] = $polName;
         }
 
-        // Destination port — only fill if not already set by user
+        // Destination port — Kpler always wins (guard removed)
         $podUnlocode = data_get($pod, 'port.unlocode');
         $podName = data_get($pod, 'port.name');
-        if ($podUnlocode && !$trip->destination_port_code) {
+        if ($podUnlocode) {
             $updates['destination_port_code'] = $podUnlocode;
             $updates['destination_port_name'] = $podName;
         }

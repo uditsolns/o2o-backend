@@ -41,7 +41,12 @@ readonly class TripService
         return DB::transaction(function () use ($data, $createdBy, $customerId) {
             $segments = $data['segments'] ?? [];
             $sealId = $data['seal_id'] ?? null;
+            $usesSepioPSeal = (bool)($data['uses_sepio_seal'] ?? false);
+
             unset($data['segments'], $data['customer_id'], $data['seal_id']);
+
+            // Default dispatch_date to today if not supplied
+            $data['dispatch_date'] = $data['dispatch_date'] ?? today()->toDateString();
 
             $trip = Trip::create([
                 ...$data,
@@ -52,26 +57,40 @@ readonly class TripService
                 'tracking_token' => Str::random(32),
             ]);
 
-            $this->eventService->log($trip, 'trip_created', ['trip_ref' => $trip->trip_ref],
-                newStatus: TripStatus::Draft->value, actorId: $createdBy->id);
+            $this->eventService->log(
+                $trip,
+                'trip_created',
+                ['trip_ref' => $trip->trip_ref],
+                newStatus: TripStatus::Draft->value,
+                actorId: $createdBy->id
+            );
 
-            // Assign seal if provided
+            // Seal assignment
             if ($sealId) {
                 $seal = Seal::findOrFail($sealId);
-                $this->sealService->assignToTrip($seal, $trip->id);
+
+                if ($usesSepioPSeal) {
+                    // Full Sepio availability check
+                    $this->sealService->assignToTrip($seal, $trip->id);
+                } else {
+                    // Non-Sepio seal: simple local assignment, no external check
+                    $this->assignSealLocally($seal, $trip->id);
+                }
+
                 $trip->update(['seal_id' => $seal->id]);
-                $this->eventService->log($trip->fresh(), 'seal_assigned',
-                    ['seal_number' => $seal->seal_number], actorId: $createdBy->id);
+
+                $this->eventService->log(
+                    $trip->fresh(),
+                    'seal_assigned',
+                    ['seal_number' => $seal->seal_number],
+                    actorId: $createdBy->id
+                );
             }
 
-            // Auto-create driver user for road/multimodal trips
+            // Auto-create driver user, consignor, consignee, route
             $this->upsertDriverUser($customerId, $trip);
-
-            // Auto-create consignor & consignee
             $this->upsertConsignor($customerId, $trip);
             $this->upsertConsignee($customerId, $trip);
-
-            // Auto-create route
             $this->routeService->findOrCreateFromTripData($customerId, $data);
 
             // Store segments
@@ -83,8 +102,50 @@ readonly class TripService
                 ]);
             }
 
+            // ── Auto-start: transition from Draft → InTransit immediately ────────
+            $trip = $this->autoStartTrip($trip->fresh(), $createdBy);
+
             return $trip->fresh();
         });
+    }
+
+    private function autoStartTrip(Trip $trip, User $by): Trip
+    {
+        $trip->update([
+            'status' => TripStatus::InTransit,
+            'trip_start_time' => now(),
+        ]);
+
+        // Sepio seal installation — only when user opted in
+        if ($trip->uses_sepio_seal && $trip->seal_id && $trip->customer->sepio_company_id) {
+            try {
+                $this->sepioSealService->installSeal($trip->customer, $trip->fresh());
+            } catch (SepioException $e) {
+                // Roll back to Draft so the trip is not left in a broken state
+                $trip->update(['status' => TripStatus::Draft, 'trip_start_time' => null]);
+                throw $e;
+            }
+        }
+
+        // Container tracking registration for sea/multimodal
+        if (
+            in_array($trip->transport_mode, [TripTransportationMode::Sea, TripTransportationMode::Multimodal], true)
+            && !empty($trip->container_number)
+            && !empty($trip->carrier_scac)
+        ) {
+            RegisterContainerTrackingJob::dispatch($trip->fresh());
+        }
+
+        $this->eventService->log(
+            $trip->fresh(),
+            'trip_started',
+            ['auto_started' => true],
+            TripStatus::Draft->value,
+            TripStatus::InTransit->value,
+            actorId: $by->id
+        );
+
+        return $trip->fresh();
     }
 
     public function update(Trip $trip, array $data, User $updatedBy): Trip
@@ -115,17 +176,24 @@ readonly class TripService
     public function startTrip(Trip $trip, array $data, User $by): Trip
     {
         abort_if($trip->status !== TripStatus::Draft, 422, 'Only Draft trips can be started.');
-        abort_if(!$trip->seal_id, 422, 'A seal must be assigned before starting the trip.');
+
+        // Seal is required only when the trip uses Sepio seals
+        abort_if(
+            $trip->uses_sepio_seal && !$trip->seal_id,
+            422,
+            'A Sepio seal must be assigned before starting the trip.'
+        );
 
         return DB::transaction(function () use ($trip, $data, $by) {
             $updates = ['status' => TripStatus::InTransit, 'trip_start_time' => now()];
+
             if (!empty($data['dispatch_date'])) {
                 $updates['dispatch_date'] = $data['dispatch_date'];
             }
 
             $trip->update($updates);
 
-            if ($trip->customer->sepio_company_id) {
+            if ($trip->uses_sepio_seal && $trip->customer->sepio_company_id) {
                 try {
                     $this->sepioSealService->installSeal($trip->customer, $trip->fresh());
                 } catch (SepioException $e) {
@@ -134,15 +202,22 @@ readonly class TripService
                 }
             }
 
-            // Register container tracking for sea/multimodal trips
-            if (in_array($trip->transport_mode, [TripTransportationMode::Sea, TripTransportationMode::Multimodal], true)
+            if (
+                in_array($trip->transport_mode, [TripTransportationMode::Sea, TripTransportationMode::Multimodal], true)
                 && !empty($trip->container_number)
-                && !empty($trip->carrier_scac)) {
+                && !empty($trip->carrier_scac)
+            ) {
                 RegisterContainerTrackingJob::dispatch($trip->fresh());
             }
 
-            $this->eventService->log($trip->fresh(), 'trip_started', [],
-                TripStatus::Draft->value, TripStatus::InTransit->value, actorId: $by->id);
+            $this->eventService->log(
+                $trip->fresh(),
+                'trip_started',
+                [],
+                TripStatus::Draft->value,
+                TripStatus::InTransit->value,
+                actorId: $by->id
+            );
 
             return $trip->fresh();
         });
@@ -157,11 +232,21 @@ readonly class TripService
             }
 
             $seal = Seal::findOrFail($newSealId);
-            $this->sealService->assignToTrip($seal, $trip->id);
+
+            if ($trip->uses_sepio_seal) {
+                $this->sealService->assignToTrip($seal, $trip->id);
+            } else {
+                $this->assignSealLocally($seal, $trip->id);
+            }
+
             $trip->update(['seal_id' => $seal->id]);
 
-            $this->eventService->log($trip->fresh(), 'seal_assigned',
-                ['seal_number' => $seal->seal_number], actorId: $by->id);
+            $this->eventService->log(
+                $trip->fresh(),
+                'seal_assigned',
+                ['seal_number' => $seal->seal_number],
+                actorId: $by->id
+            );
 
             return $trip->fresh();
         });
@@ -282,6 +367,20 @@ readonly class TripService
                 'contact_email' => $trip->delivery_contact_email,
             ]
         );
+    }
+
+    private function assignSealLocally(Seal $seal, int $tripId): void
+    {
+        abort_if(
+            !$seal->isAvailable(),
+            422,
+            "Seal {$seal->seal_number} is not available (current status: {$seal->status->value})."
+        );
+
+        $seal->update([
+            'trip_id' => $tripId,
+            'status' => SealStatus::Assigned,
+        ]);
     }
 
     private function generateTripRef(): string
