@@ -11,10 +11,12 @@ class TripShipmentMilestone extends Model
     public $timestamps = false;
 
     protected $fillable = [
-        'trip_id', 'customer_id', 'mt_event_id', 'event_type', 'event_classifier',
+        'trip_id', 'customer_id', 'mt_event_id',
+        'event_type', 'event_category', 'event_classifier',
         'location_name', 'location_unlocode', 'location_country',
         'location_lat', 'location_lng', 'terminal_name',
-        'vessel_name', 'vessel_imo', 'voyage_number',
+        'vessel_name', 'vessel_imo', 'vessel_mmsi', 'voyage_number',
+        'mode_of_transport', 'local_time_offset', 'equipment_indicator',
         'location_type', 'sequence_order', 'occurred_at',
     ];
 

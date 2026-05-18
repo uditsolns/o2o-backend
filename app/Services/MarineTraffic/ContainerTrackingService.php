@@ -247,10 +247,36 @@ class ContainerTrackingService
             'arrival_delay_days' => $insights['arrivalDelayDays'] ?? null,
             'initial_carrier_eta' => $insights['initialCarrierEta'] ?? $record->initial_carrier_eta,
             'has_rollover' => !empty($rollovers),
+
+            // Carrier
+            'carrier_name' => data_get($attrs, 'carrier.name') ?? $record->carrier_name,
+
+            // Container specs
+            'container_iso_code' => data_get($attrs, 'containers.0.isoCode') ?? $record->container_iso_code,
+            'container_type_name' => data_get($attrs, 'containers.0.type') ?? $record->container_type_name,
+            'container_size' => data_get($attrs, 'containers.0.size') ?? $record->container_size,
+
+            // POL
             'pol_name' => data_get($pol, 'port.name') ?? $record->pol_name,
             'pol_unlocode' => data_get($pol, 'port.unlocode') ?? $record->pol_unlocode,
+            'pol_lat' => data_get($pol, 'port.lat') ?? $record->pol_lat,
+            'pol_lng' => data_get($pol, 'port.lon') ?? $record->pol_lng,
+            'pol_country' => data_get($pol, 'port.country') ?? $record->pol_country,
+            'pol_etd' => data_get($pol, 'departureDate.timestamp') ?? $record->pol_etd,
+            'pol_vessel_name' => data_get($pol, 'loadingVessel.name') ?? $record->pol_vessel_name,
+            'pol_vessel_imo' => data_get($pol, 'loadingVessel.imo') ?? $record->pol_vessel_imo,
+            'pol_voyage_number' => data_get($pol, 'voyageNumber') ?? $record->pol_voyage_number,
+
+            // POD
             'pod_name' => data_get($pod, 'port.name') ?? $record->pod_name,
             'pod_unlocode' => data_get($pod, 'port.unlocode') ?? $record->pod_unlocode,
+            'pod_lat' => data_get($pod, 'port.lat') ?? $record->pod_lat,
+            'pod_lng' => data_get($pod, 'port.lon') ?? $record->pod_lng,
+            'pod_country' => data_get($pod, 'port.country') ?? $record->pod_country,
+            'pod_arrival_status' => data_get($pod, 'arrivalDate.status') ?? $record->pod_arrival_status,
+            'pod_actual_arrival' => ($podArrivalStatus === 'actual' ? $podArrivalTimestamp : null) ?? $record->pod_actual_arrival,
+
+            // Current vessel snapshot
             'current_vessel_name' => $currentVessel['name'] ?? $record->current_vessel_name,
             'current_vessel_imo' => $currentVessel['imo'] ?? $record->current_vessel_imo,
             'current_vessel_lat' => $pos['lat'] ?? $record->current_vessel_lat,
@@ -259,6 +285,7 @@ class ContainerTrackingService
             'current_vessel_heading' => $pos['heading'] ?? $record->current_vessel_heading,
             'current_vessel_geo_area' => $pos['geographicalArea'] ?? $record->current_vessel_geo_area,
             'current_vessel_position_at' => $positionTime,
+
             'last_synced_at' => now(),
             'raw_shipment_snapshot' => $shipment,
             'eta_history' => $etaHistory,
@@ -400,19 +427,24 @@ class ContainerTrackingService
                     ['trip_id' => $record->trip_id, 'mt_event_id' => $eventId],
                     [
                         'customer_id' => $record->customer_id,
+                        'event_category' => isset($event['equipmentEventTypeName']) ? 'equipment' : 'transport',
                         'event_type' => $event['equipmentEventTypeName']
                             ?? $event['transportEventTypeName']
                                 ?? 'unknown',
                         'event_classifier' => $event['eventClassifierCode'] ?? 'planned',
+                        'mode_of_transport' => $event['modeOfTransport'] ?? null,
+                        'equipment_indicator' => $event['equipmentEmptyIndicator'] ?? null,
                         'location_name' => $loc['name'] ?? null,
                         'location_unlocode' => $loc['unlocode'] ?? null,
                         'location_country' => $loc['country'] ?? null,
                         'location_lat' => $loc['lat'] ?? null,
                         'location_lng' => $loc['lon'] ?? null,
                         'terminal_name' => $loc['terminal']['name'] ?? null,
+                        'local_time_offset' => $loc['localTimeOffset'] ?? null,
                         'location_type' => $loc['type'] ?? null,
                         'vessel_name' => $vessel['name'] ?? null,
                         'vessel_imo' => $vessel['imo'] ?? null,
+                        'vessel_mmsi' => $vessel['mmsi'] ?? null,
                         'voyage_number' => $vessel['voyageNumber'] ?? null,
                         'sequence_order' => $event['eventOrder'] ?? 0,
                         'occurred_at' => !empty($event['eventDateTime'])
@@ -557,27 +589,8 @@ class ContainerTrackingService
     private function buildTripUpdatesFromShipment(array $attrs, Trip $trip): array
     {
         $updates = [];
-        $currentVessel = $attrs['currentVessel'] ?? null;
         $pol = $attrs['portOfLoading'] ?? null;
         $pod = $attrs['portOfDischarge'] ?? null;
-
-        // Vessel name
-        $vesselName = $currentVessel['name'] ?? data_get($pol, 'loadingVessel.name');
-        if ($vesselName) {
-            $updates['vessel_name'] = $vesselName;
-        }
-
-        // Vessel IMO
-        $vesselImo = $currentVessel['imo'] ?? data_get($pol, 'loadingVessel.imo');
-        if ($vesselImo) {
-            $updates['vessel_imo_number'] = (string)$vesselImo;
-        }
-
-        // Voyage number
-        $voyageNumber = data_get($pol, 'voyageNumber');
-        if ($voyageNumber) {
-            $updates['voyage_number'] = $voyageNumber;
-        }
 
         // ETD from POL
         $polDepartureTs = data_get($pol, 'departureDate.timestamp');
@@ -595,7 +608,7 @@ class ContainerTrackingService
             }
         }
 
-        // Origin port — Kpler always wins (guard removed)
+        // Origin port
         $polUnlocode = data_get($pol, 'port.unlocode');
         $polName = data_get($pol, 'port.name');
         if ($polUnlocode) {
@@ -603,7 +616,7 @@ class ContainerTrackingService
             $updates['origin_port_name'] = $polName;
         }
 
-        // Destination port — Kpler always wins (guard removed)
+        // Destination port
         $podUnlocode = data_get($pod, 'port.unlocode');
         $podName = data_get($pod, 'port.name');
         if ($podUnlocode) {

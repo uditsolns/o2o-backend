@@ -18,9 +18,7 @@ class VesselAisService
                 'protocol' => 'jsono',
             ]);
 
-        if ($response->status() === 429) {
-            return 'rate_limited';
-        }
+        if ($response->status() === 429) return 'rate_limited';
 
         if ($response->failed()) {
             Log::warning('VesselAisService: position fetch failed', [
@@ -48,7 +46,9 @@ class VesselAisService
             'course' => isset($vessel['COURSE']) ? (float)$vessel['COURSE'] : null,
             'ais_status' => isset($vessel['STATUS']) ? (int)$vessel['STATUS'] : null,
             'destination' => $vessel['DESTINATION'] ?? null,
+            'current_port' => $vessel['CURRENT_PORT'] ?? null,
             'eta' => !empty($vessel['ETA']) ? $vessel['ETA'] : null,
+            'eta_calc' => !empty($vessel['ETA_CALC']) ? $vessel['ETA_CALC'] : null,
             'timestamp' => $vessel['TIMESTAMP'] ?? null,
             'dsrc' => $vessel['DSRC'] ?? null,
         ];

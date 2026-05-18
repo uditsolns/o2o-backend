@@ -281,17 +281,30 @@ readonly class TripService
 
     public function addVesselInfo(Trip $trip, array $data, User $by): Trip
     {
+        // These fields stay on Trip
         $trip->update([
-            'vessel_name' => $data['vessel_name'],
-            'vessel_imo_number' => $data['vessel_imo_number'] ?? null,
-            'voyage_number' => $data['voyage_number'] ?? null,
-            'bill_of_lading' => $data['bill_of_lading'] ?? null,
-            'eta' => $data['eta'] ?? null,
-            'etd' => $data['etd'] ?? null,
+            'bill_of_lading' => $data['bill_of_lading'] ?? $trip->bill_of_lading,
+            'eta' => $data['eta'] ?? $trip->eta,
+            'etd' => $data['etd'] ?? $trip->etd,
         ]);
 
-        $this->eventService->log($trip->fresh(), 'vessel_info_added',
-            ['vessel_name' => $data['vessel_name']], actorId: $by->id);
+        // Vessel fields go to TripContainerTracking
+        if ($trip->containerTracking) {
+            $trip->containerTracking->updateQuietly([
+                'pol_vessel_name' => $data['vessel_name'] ?? null,
+                'pol_vessel_imo' => $data['vessel_imo_number'] ?? null,
+                'pol_voyage_number' => $data['voyage_number'] ?? null,
+                'current_vessel_name' => $data['vessel_name'] ?? null,
+                'current_vessel_imo' => $data['vessel_imo_number'] ?? null,
+            ]);
+        }
+
+        $this->eventService->log(
+            $trip->fresh(),
+            'vessel_info_added',
+            ['vessel_name' => $data['vessel_name'] ?? null],
+            actorId: $by->id
+        );
 
         return $trip->fresh();
     }

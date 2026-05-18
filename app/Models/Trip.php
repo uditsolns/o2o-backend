@@ -32,11 +32,11 @@ class Trip extends Model
         'delivery_contact_number', 'delivery_contact_email', 'delivery_lat', 'delivery_lng',
         'origin_port_name', 'origin_port_code', 'origin_port_category',
         'destination_port_name', 'destination_port_code', 'destination_port_category',
-        'vessel_name', 'vessel_imo_number', 'voyage_number', 'bill_of_lading', 'eta', 'etd',
-        'last_vessel_tracked_at', 'dispatch_date', 'trip_start_time', 'expected_delivery_date',
+        'bill_of_lading', 'eta', 'etd',
+        'carrier_scac', 'customs_hold',
+        'dispatch_date', 'trip_start_time', 'expected_delivery_date',
         'actual_delivery_date', 'trip_end_time',
         'epod_status', 'epod_confirmed_at', 'epod_confirmed_by_id', 'epod_confirmation_notes',
-        'carrier_scac', 'mt_vessel_ship_id', 'customs_hold', 'last_vessel_position_at',
     ];
 
     protected $casts = [
@@ -62,8 +62,6 @@ class Trip extends Model
         'is_verification_done' => 'boolean',
         'last_fastag_synced_at' => 'datetime',
         'last_tracked_at' => 'datetime',
-        'last_vessel_tracked_at' => 'datetime',
-        'last_vessel_position_at' => 'datetime',
         'customs_hold' => 'boolean',
         'uses_sepio_seal' => 'boolean',
         'shipping_bill_date' => 'date',
@@ -141,11 +139,5 @@ class Trip extends Model
     {
         return in_array($this->transport_mode, [TripTransportationMode::Road, TripTransportationMode::Multimodal], true)
             && in_array($this->status, [TripStatus::InTransit, TripStatus::AtPort], true);
-    }
-
-    public function requiresSeaTracking(): bool
-    {
-        return in_array($this->transport_mode, [TripTransportationMode::Sea, TripTransportationMode::Multimodal], true)
-            && !in_array($this->status, [TripStatus::Draft, TripStatus::Completed], true);
     }
 }

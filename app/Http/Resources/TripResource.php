@@ -98,13 +98,9 @@ class TripResource extends JsonResource
                 'category' => $this->destination_port_category,
             ],
             // Vessel
-            'vessel_name' => $this->vessel_name,
-            'vessel_imo_number' => $this->vessel_imo_number,
-            'voyage_number' => $this->voyage_number,
             'bill_of_lading' => $this->bill_of_lading,
             'carrier_scac' => $this->carrier_scac,
             'customs_hold' => $this->customs_hold,
-            'last_vessel_position_at' => $this->last_vessel_position_at,
             'eta' => $this->eta,
             'etd' => $this->etd,
             // Timeline

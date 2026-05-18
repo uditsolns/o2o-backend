@@ -13,8 +13,12 @@ class TripShipmentMilestoneResource extends JsonResource
     {
         return [
             'id' => $this->id,
+            'event_category' => $this->event_category,
             'event_type' => $this->event_type,
             'event_classifier' => $this->event_classifier,
+            'mode_of_transport' => $this->mode_of_transport,
+            'equipment_indicator' => $this->equipment_indicator,
+
             'location' => [
                 'name' => $this->location_name,
                 'unlocode' => $this->location_unlocode,
@@ -23,12 +27,16 @@ class TripShipmentMilestoneResource extends JsonResource
                 'lng' => $this->location_lng,
                 'terminal' => $this->terminal_name,
                 'type' => $this->location_type,
+                'local_time_offset' => $this->local_time_offset,
             ],
+
             'vessel' => [
                 'name' => $this->vessel_name,
                 'imo' => $this->vessel_imo,
+                'mmsi' => $this->vessel_mmsi,
                 'voyage' => $this->voyage_number,
             ],
+
             'sequence_order' => $this->sequence_order,
             'occurred_at' => $this->occurred_at,
         ];

@@ -5,7 +5,7 @@ namespace App\Jobs;
 use App\Enums\TripSegmentTrackingSource;
 use App\Enums\TripStatus;
 use App\Enums\TripTransportationMode;
-use App\Models\Trip;
+use App\Models\TripContainerTracking;
 use App\Services\MarineTraffic\VesselAisService;
 use App\Services\TripTrackingService;
 use Illuminate\Bus\Queueable;
@@ -23,49 +23,52 @@ class VesselAisPollJob implements ShouldQueue
 
     public function handle(VesselAisService $aisService, TripTrackingService $trackingService): void
     {
-        $trips = Trip::whereIn('status', [
-            TripStatus::OnVessel,
-            TripStatus::InTransshipment,
-        ])
-            ->whereIn('transport_mode', [
-                TripTransportationMode::Sea,
-                TripTransportationMode::Multimodal,
-            ])
-            ->whereNotNull('vessel_imo_number')
+        $records = TripContainerTracking::with('trip')
+            ->where('tracking_status', 'active')
+            ->whereNotNull('current_vessel_imo')
+            ->whereHas('trip', fn($q) => $q->whereIn('status', [
+                TripStatus::OnVessel->value,
+                TripStatus::InTransshipment->value,
+            ])->whereIn('transport_mode', [
+                TripTransportationMode::Sea->value,
+                TripTransportationMode::Multimodal->value,
+            ]))
             ->get();
 
-        if ($trips->isEmpty()) return;
+        if ($records->isEmpty()) return;
 
-        Log::info('VesselAisPollJob: polling', ['count' => $trips->count()]);
+        Log::info('VesselAisPollJob: polling', ['count' => $records->count()]);
 
-        foreach ($trips as $trip) {
+        foreach ($records as $record) {
             try {
-                $this->pollTrip($trip, $aisService, $trackingService);
+                $this->pollRecord($record, $aisService, $trackingService);
             } catch (\Throwable $e) {
-                Log::error('VesselAisPollJob: trip failed', [
-                    'trip_id' => $trip->id,
+                Log::error('VesselAisPollJob: record failed', [
+                    'trip_id' => $record->trip_id,
                     'error' => $e->getMessage(),
                 ]);
             }
         }
     }
 
-    private function pollTrip(Trip $trip, VesselAisService $aisService, TripTrackingService $trackingService): void
+    private function pollRecord(
+        TripContainerTracking $record,
+        VesselAisService      $aisService,
+        TripTrackingService   $trackingService
+    ): void
     {
-        $position = $aisService->getVesselPosition($trip->vessel_imo_number);
+        $position = $aisService->getVesselPosition($record->current_vessel_imo);
 
         if ($position === null) return;
 
-        // Rate limit hit — back off, don't update last_vessel_position_at
         if ($position === 'rate_limited') {
-            Log::warning('VesselAisPollJob: rate limited by MarineTraffic', ['trip_id' => $trip->id]);
+            Log::warning('VesselAisPollJob: rate limited', ['trip_id' => $record->trip_id]);
             return;
         }
 
-        if (!empty($position['ship_id']) && $trip->mt_vessel_ship_id !== $position['ship_id']) {
-            $trip->updateQuietly(['mt_vessel_ship_id' => $position['ship_id']]);
-        }
+        $trip = $record->trip;
 
+        // Record tracking point on the trip (unchanged behaviour)
         $trackingService->record($trip, [
             'source' => TripSegmentTrackingSource::VesselAis->value,
             'lat' => $position['lat'],
@@ -77,11 +80,24 @@ class VesselAisPollJob implements ShouldQueue
             'raw_payload' => $position,
         ]);
 
-        $trip->updateQuietly(['last_vessel_position_at' => now()]);
+        // Update container tracking record (vessel + AIS enrichment)
+        $record->updateQuietly([
+            'mt_vessel_ship_id' => $position['ship_id'],
+            'last_vessel_position_at' => now(),
+            'current_vessel_lat' => $position['lat'],
+            'current_vessel_lng' => $position['lng'],
+            'current_vessel_speed' => $position['speed_knots'],
+            'current_vessel_heading' => $position['heading'],
+            'current_vessel_position_at' => $position['timestamp'] ?? now(),
+            'current_vessel_mmsi' => $position['mmsi'],
+            'current_vessel_destination' => $position['destination'],
+            'current_vessel_current_port' => $position['current_port'],
+            'current_vessel_ais_eta' => $position['eta_calc'],
+        ]);
 
         Log::info('VesselAisPollJob: position recorded', [
-            'trip_id' => $trip->id,
-            'vessel_imo' => $trip->vessel_imo_number,
+            'trip_id' => $record->trip_id,
+            'vessel_imo' => $record->current_vessel_imo,
             'lat' => $position['lat'],
             'lng' => $position['lng'],
         ]);

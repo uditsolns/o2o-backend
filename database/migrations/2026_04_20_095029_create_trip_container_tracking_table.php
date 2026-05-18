@@ -13,7 +13,7 @@ return new class extends Migration {
             $table->foreignId('customer_id')->constrained()->restrictOnDelete();
             $table->string('container_number', 20);
             $table->string('carrier_scac', 10);
-            $table->string('mt_tracking_request_id')->nullable()->unique();
+            $table->string('mt_tracking_request_id')->nullable();
             $table->string('mt_shipment_id')->nullable()->unique();
             $table->enum('tracking_status', ['not_registered', 'pending', 'active', 'failed'])
                 ->default('not_registered');
