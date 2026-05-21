@@ -21,18 +21,35 @@ class VesselAisPollJob implements ShouldQueue
 
     public int $tries = 1;
 
+    /**
+     * Transportation statuses where the container is NOT loaded on a moving vessel.
+     * Polling the AIS API during these states serves no purpose.
+     */
+    private const PAUSED_STATUSES = [
+        'booked',
+        'not_arrived_at_port_of_loading',
+        'waiting_at_port_of_loading',
+        'waiting_at_a_transhipment_port',   // correct Kpler spelling
+        'waiting_at_port_of_discharge',
+        'left_the_port_of_discharge',
+        'completed',
+        'routing_data_inconclusive',
+    ];
+
     public function handle(VesselAisService $aisService, TripTrackingService $trackingService): void
     {
         $records = TripContainerTracking::with('trip')
             ->where('tracking_status', 'active')
             ->whereNotNull('current_vessel_imo')
-            ->whereHas('trip', fn($q) => $q->whereIn('status', [
-                TripStatus::OnVessel->value,
-                TripStatus::InTransshipment->value,
-            ])->whereIn('transport_mode', [
-                TripTransportationMode::Sea->value,
-                TripTransportationMode::Multimodal->value,
-            ]))
+            // Skip statuses where vessel is not underway
+            ->whereNotIn('transportation_status', self::PAUSED_STATUSES)
+            ->whereHas('trip', fn($q) => $q
+                ->where('status', TripStatus::Active->value)
+                ->whereIn('transport_mode', [
+                    TripTransportationMode::Sea->value,
+                    TripTransportationMode::Multimodal->value,
+                ])
+            )
             ->get();
 
         if ($records->isEmpty()) return;
@@ -68,7 +85,12 @@ class VesselAisPollJob implements ShouldQueue
 
         $trip = $record->trip;
 
-        // Record tracking point on the trip (unchanged behaviour)
+        // Deterministic external_id for deduplication:
+        // same vessel + same AIS timestamp = same position event
+        $externalId = ($position['mmsi'] ?? $record->current_vessel_imo)
+            . '_'
+            . ($position['timestamp'] ?? '');
+
         $trackingService->record($trip, [
             'source' => TripSegmentTrackingSource::VesselAis->value,
             'lat' => $position['lat'],
@@ -76,23 +98,26 @@ class VesselAisPollJob implements ShouldQueue
             'speed' => $position['speed_knots'],
             'heading' => $position['heading'],
             'location_name' => $position['destination'],
+            'external_id' => $externalId,
             'recorded_at' => $position['timestamp'] ?? now(),
             'raw_payload' => $position,
         ]);
 
-        // Update container tracking record (vessel + AIS enrichment)
+        // Merge AIS-enriched data into the current_vessel JSON snapshot
+        $currentVessel = $record->current_vessel ?? [];
         $record->updateQuietly([
             'mt_vessel_ship_id' => $position['ship_id'],
             'last_vessel_position_at' => now(),
-            'current_vessel_lat' => $position['lat'],
-            'current_vessel_lng' => $position['lng'],
-            'current_vessel_speed' => $position['speed_knots'],
-            'current_vessel_heading' => $position['heading'],
-            'current_vessel_position_at' => $position['timestamp'] ?? now(),
-            'current_vessel_mmsi' => $position['mmsi'],
-            'current_vessel_destination' => $position['destination'],
-            'current_vessel_current_port' => $position['current_port'],
-            'current_vessel_ais_eta' => $position['eta_calc'],
+            'current_vessel' => array_merge($currentVessel, [
+                'lat' => $position['lat'],
+                'lng' => $position['lng'],
+                'speed_knots' => $position['speed_knots'],
+                'heading' => $position['heading'],
+                'destination' => $position['destination'],
+                'current_port' => $position['current_port'],
+                'ais_eta' => $position['eta_calc'],
+                'position_at' => ($position['timestamp'] ?? now()->toISOString()),
+            ]),
         ]);
 
         Log::info('VesselAisPollJob: position recorded', [

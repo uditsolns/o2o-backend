@@ -118,7 +118,7 @@ class TripController extends Controller
         );
 
         abort_if(
-            $trip->status === TripStatus::InTransit && $trip->uses_sepio_seal,
+            $trip->status === TripStatus::Active && $trip->uses_sepio_seal,
             422,
             'Seal cannot be changed after Sepio seal installation has been initiated.'
         );

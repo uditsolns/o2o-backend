@@ -30,7 +30,7 @@ class TripTrackingController extends Controller
             ->when($request->query('source'), fn($q, $v) => $q->where('source', $v))
             ->when($request->query('from'), fn($q, $v) => $q->where('recorded_at', '>=', $v))
             ->when($request->query('to'), fn($q, $v) => $q->where('recorded_at', '<=', $v))
-            ->orderByDesc('recorded_at')
+            ->orderBy('recorded_at')
             ->get();
 
         return TripTrackingPointResource::collection($points);
@@ -46,7 +46,7 @@ class TripTrackingController extends Controller
         $this->authorizeTrackingPush($request, $trip);
 
         abort_if(
-            !in_array($trip->status, [TripStatus::InTransit, TripStatus::AtPort], true),
+            $trip->status !== TripStatus::Active,
             422,
             'Location updates are only accepted for active trips.'
         );
@@ -103,7 +103,7 @@ class TripTrackingController extends Controller
         abort_if(!$trip, 401, 'Invalid tracking token.');
 
         abort_if(
-            !in_array($trip->status, [TripStatus::InTransit, TripStatus::AtPort], true),
+            $trip->status !== TripStatus::Active,
             422,
             'Location updates are only accepted for active trips.'
         );

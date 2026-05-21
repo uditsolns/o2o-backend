@@ -214,19 +214,15 @@ readonly class SealService
                 $trip = $seal->trip;
                 if (
                     $trip &&
-                    $trip->status === TripStatus::InTransit &&
+                    $trip->status === TripStatus::Active &&
                     $trip->origin_port_code &&
                     $scanLocation &&
                     str_contains(strtoupper($scanLocation), '(' . strtoupper($trip->origin_port_code) . ')')
                 ) {
-                    $trip->update(['status' => TripStatus::AtPort]);
-
                     TripEvent::create([
                         'customer_id' => $trip->customer_id,
                         'trip_id' => $trip->id,
-                        'event_type' => 'status_changed',
-                        'previous_status' => TripStatus::InTransit,
-                        'new_status' => TripStatus::AtPort,
+                        'event_type' => 'seal_scanned_at_origin_port',
                         'event_data' => ['scan_location' => $scanLocation, 'triggered_by' => 'seal_scan'],
                         'actor_type' => 'system',
                         'actor_id' => null,

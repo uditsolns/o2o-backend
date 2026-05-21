@@ -3,6 +3,7 @@
 namespace App\Services\MarineTraffic;
 
 use App\Enums\TripStatus;
+use App\Enums\TripTransportationMode;
 use App\Models\Trip;
 use App\Models\TripContainerTracking;
 use App\Models\TripEvent;
@@ -24,11 +25,6 @@ class ContainerTrackingService
 
     // Registration
 
-    /**
-     * Register a container with Kpler for tracking.
-     * Handles the `resource_already_exists` error gracefully — recovers the
-     * existing tracking request ID instead of treating it as a hard failure.
-     */
     public function registerTracking(Trip $trip): TripContainerTracking
     {
         $record = TripContainerTracking::firstOrCreate(
@@ -56,9 +52,7 @@ class ContainerTrackingService
             ]],
         ]);
 
-        // Check body-level errors FIRST (Kpler returns HTTP 200 even for errors)
         $errors = $response->json('errors', []);
-
         $alreadyExists = collect($errors)->first(
             fn($e) => ($e['code'] ?? '') === 'resource_already_exists'
         );
@@ -83,7 +77,6 @@ class ContainerTrackingService
             return $record->fresh();
         }
 
-        // Now check for genuine HTTP failures
         if ($response->failed()) {
             $failedReason = $response->json('errors.0.description')
                 ?? $response->json('message')
@@ -104,7 +97,6 @@ class ContainerTrackingService
             return $record;
         }
 
-        // Success path
         $item = $response->json('data.0') ?? $response->json('data') ?? null;
 
         $trackingRequestId =
@@ -134,12 +126,8 @@ class ContainerTrackingService
         return $record->fresh();
     }
 
-    // Pending status check (called by CheckPendingTrackingRequestsJob)
+    // Pending status check
 
-    /**
-     * Poll Kpler for a pending tracking request to see if it has been activated
-     * and been assigned a shipment ID.
-     */
     public function checkAndActivatePendingTracking(TripContainerTracking $record): void
     {
         if (!$record->mt_tracking_request_id) return;
@@ -173,7 +161,7 @@ class ContainerTrackingService
 
             Log::info('ContainerTrackingService: pending tracking request now active', [
                 'trip_id' => $record->trip_id,
-                'shipment_id' => $record->mt_shipment_id,
+                'shipment_id' => $record->fresh()->mt_shipment_id,
             ]);
 
             if ($record->fresh()->mt_shipment_id) {
@@ -193,19 +181,8 @@ class ContainerTrackingService
         }
     }
 
-    // Shipment snapshot (webhook + nightly refresh)
+    // Shipment snapshot
 
-    /**
-     * Called by the webhook controller on `shipment_updated` events.
-     * Also called by NightlyContainerSyncJob via refreshShipment().
-     *
-     * Responsibilities:
-     *  - Update the TripContainerTracking snapshot
-     *  - Sync vessel name / IMO / voyage / ETA / port info back to Trip
-     *  - Auto-advance TripStatus from Kpler's transportationStatus
-     *  - Create TripEvents for rollover and port-change alerts
-     *  - Update ETA history, rollover history, transshipment ports
-     */
     public function processWebhookShipment(array $shipment): void
     {
         $shipmentId = $shipment['shipmentId'] ?? $shipment['id'] ?? null;
@@ -228,9 +205,8 @@ class ContainerTrackingService
         $transshipmentPorts = $attrs['portsOfTransshipment'] ?? [];
         $transportationStatus = $attrs['transportationStatus'] ?? null;
         $rollovers = $insights['rollover'] ?? [];
-        $positionTime = $pos['timestamp'] ?? $pos['positionReceivedAt'] ?? now();
 
-        // ETA from POD planned arrival
+        // POD dates
         $podArrivalTimestamp = data_get($pod, 'arrivalDate.timestamp');
         $podArrivalStatus = data_get($pod, 'arrivalDate.status');
 
@@ -238,103 +214,176 @@ class ContainerTrackingService
             ? $podArrivalTimestamp
             : null;
         $etaHistory = $this->buildUpdatedEtaHistory($record, $newEta);
-        $wasRolled = $record->has_rollover;
+        $wasRolled = data_get($record->insights, 'has_rollover', false);
 
-        // Update TripContainerTracking snapshot
+        // Backfill resolved SCAC (user may have entered 'AUTO')
+        $resolvedScac = data_get($attrs, 'carrier.scac');
+        if ($resolvedScac && $resolvedScac !== 'AUTO' && $resolvedScac !== $record->carrier_scac) {
+            $record->trip?->updateQuietly(['carrier_scac' => $resolvedScac]);
+        }
+
+        // Normalize transshipment ports (lon → lng)
+        $normalizedTransshipmentPorts = $this->normalizeTransshipmentPorts($transshipmentPorts);
+
+        // Track when transportation_status changed
+        $transportationStatusUpdatedAt = (
+            $transportationStatus !== null &&
+            $transportationStatus !== $record->transportation_status
+        )
+            ? now()
+            : $record->transportation_status_updated_at;
+
+        // Update all snapshot data
         $record->update([
             'tracking_status' => 'active',
             'transportation_status' => $transportationStatus,
-            'arrival_delay_days' => $insights['arrivalDelayDays'] ?? null,
-            'initial_carrier_eta' => $insights['initialCarrierEta'] ?? $record->initial_carrier_eta,
-            'has_rollover' => !empty($rollovers),
+            'transportation_status_updated_at' => $transportationStatusUpdatedAt,
+            'is_routing_inconclusive' => ($transportationStatus === 'routing_data_inconclusive'),
 
-            // Carrier
-            'carrier_name' => data_get($attrs, 'carrier.name') ?? $record->carrier_name,
-
-            // Container specs
-            'container_iso_code' => data_get($attrs, 'containers.0.isoCode') ?? $record->container_iso_code,
-            'container_type_name' => data_get($attrs, 'containers.0.type') ?? $record->container_type_name,
-            'container_size' => data_get($attrs, 'containers.0.size') ?? $record->container_size,
-
-            // POL
-            'pol_name' => data_get($pol, 'port.name') ?? $record->pol_name,
-            'pol_unlocode' => data_get($pol, 'port.unlocode') ?? $record->pol_unlocode,
-            'pol_lat' => data_get($pol, 'port.lat') ?? $record->pol_lat,
-            'pol_lng' => data_get($pol, 'port.lon') ?? $record->pol_lng,
-            'pol_country' => data_get($pol, 'port.country') ?? $record->pol_country,
-            'pol_etd' => data_get($pol, 'departureDate.timestamp') ?? $record->pol_etd,
-            'pol_vessel_name' => data_get($pol, 'loadingVessel.name') ?? $record->pol_vessel_name,
-            'pol_vessel_imo' => data_get($pol, 'loadingVessel.imo') ?? $record->pol_vessel_imo,
-            'pol_voyage_number' => data_get($pol, 'voyageNumber') ?? $record->pol_voyage_number,
-
-            // POD
-            'pod_name' => data_get($pod, 'port.name') ?? $record->pod_name,
-            'pod_unlocode' => data_get($pod, 'port.unlocode') ?? $record->pod_unlocode,
-            'pod_lat' => data_get($pod, 'port.lat') ?? $record->pod_lat,
-            'pod_lng' => data_get($pod, 'port.lon') ?? $record->pod_lng,
-            'pod_country' => data_get($pod, 'port.country') ?? $record->pod_country,
-            'pod_arrival_status' => data_get($pod, 'arrivalDate.status') ?? $record->pod_arrival_status,
-            'pod_actual_arrival' => ($podArrivalStatus === 'actual' ? $podArrivalTimestamp : null) ?? $record->pod_actual_arrival,
-
-            // Current vessel snapshot
-            'current_vessel_name' => $currentVessel['name'] ?? $record->current_vessel_name,
+            // Flat operational field — kept for VesselAisPollJob WHERE clause
             'current_vessel_imo' => $currentVessel['imo'] ?? $record->current_vessel_imo,
-            'current_vessel_lat' => $pos['lat'] ?? $record->current_vessel_lat,
-            'current_vessel_lng' => $pos['lon'] ?? $record->current_vessel_lng,
-            'current_vessel_speed' => $pos['speed'] ?? $record->current_vessel_speed,
-            'current_vessel_heading' => $pos['heading'] ?? $record->current_vessel_heading,
-            'current_vessel_geo_area' => $pos['geographicalArea'] ?? $record->current_vessel_geo_area,
-            'current_vessel_position_at' => $positionTime,
+
+            // carrier JSON
+            'carrier' => [
+                'scac' => $resolvedScac ?? data_get($record->carrier, 'scac'),
+                'name' => data_get($attrs, 'carrier.name') ?? data_get($record->carrier, 'name'),
+            ],
+
+            // container_specs JSON
+            'container_specs' => [
+                'iso_code' => data_get($attrs, 'containers.0.isoCode')
+                    ?? data_get($record->container_specs, 'iso_code'),
+                'type' => data_get($attrs, 'containers.0.type')
+                    ?? data_get($record->container_specs, 'type'),
+                'size' => data_get($attrs, 'containers.0.size')
+                    ?? data_get($record->container_specs, 'size'),
+            ],
+
+            // pol JSON — Kpler uses 'lon', we normalize to 'lng'
+            'pol' => [
+                'name' => data_get($pol, 'port.name') ?? data_get($record->pol, 'name'),
+                'unlocode' => data_get($pol, 'port.unlocode') ?? data_get($record->pol, 'unlocode'),
+                'lat' => data_get($pol, 'port.lat') ?? data_get($record->pol, 'lat'),
+                'lng' => data_get($pol, 'port.lon') ?? data_get($record->pol, 'lng'),
+                'country' => data_get($pol, 'port.country') ?? data_get($record->pol, 'country'),
+                'etd' => data_get($pol, 'departureDate.timestamp') ?? data_get($record->pol, 'etd'),
+                'loading_vessel' => [
+                    'name' => data_get($pol, 'loadingVessel.name') ?? data_get($record->pol, 'loading_vessel.name'),
+                    'imo' => data_get($pol, 'loadingVessel.imo') ?? data_get($record->pol, 'loading_vessel.imo'),
+                    'mmsi' => isset($pol['loadingVessel']['mmsi'])
+                        ? (string)$pol['loadingVessel']['mmsi']
+                        : data_get($record->pol, 'loading_vessel.mmsi'),
+                    'mt_id' => data_get($pol, 'loadingVessel.mtId') ?? data_get($record->pol, 'loading_vessel.mt_id'),
+                    'voyage' => data_get($pol, 'voyageNumber') ?? data_get($record->pol, 'loading_vessel.voyage'),
+                ],
+            ],
+
+            // pod JSON
+            'pod' => [
+                'name' => data_get($pod, 'port.name') ?? data_get($record->pod, 'name'),
+                'unlocode' => data_get($pod, 'port.unlocode') ?? data_get($record->pod, 'unlocode'),
+                'lat' => data_get($pod, 'port.lat') ?? data_get($record->pod, 'lat'),
+                'lng' => data_get($pod, 'port.lon') ?? data_get($record->pod, 'lng'),
+                'country' => data_get($pod, 'port.country') ?? data_get($record->pod, 'country'),
+                'arrival_status' => $podArrivalStatus ?? data_get($record->pod, 'arrival_status'),
+                'arrival_at' => ($podArrivalStatus === 'actual' ? $podArrivalTimestamp : null)
+                    ?? data_get($record->pod, 'arrival_at'),
+            ],
+
+            // current_vessel JSON — Kpler uses 'lon', we normalize to 'lng'
+            'current_vessel' => [
+                'name' => $currentVessel['name'] ?? data_get($record->current_vessel, 'name'),
+                'imo' => $currentVessel['imo'] ?? data_get($record->current_vessel, 'imo'),
+                'mmsi' => isset($currentVessel['mmsi'])
+                    ? (string)$currentVessel['mmsi']
+                    : data_get($record->current_vessel, 'mmsi'),
+                'mt_id' => $currentVessel['mtId'] ?? data_get($record->current_vessel, 'mt_id'),
+                'lat' => $pos['lat'] ?? data_get($record->current_vessel, 'lat'),
+                'lng' => $pos['lon'] ?? data_get($record->current_vessel, 'lng'),
+                'speed_knots' => $pos['speed'] ?? data_get($record->current_vessel, 'speed_knots'),
+                'heading' => $pos['heading'] ?? data_get($record->current_vessel, 'heading'),
+                'geo_area' => $pos['geographicalArea'] ?? data_get($record->current_vessel, 'geo_area'),
+                'operational_status' => $currentVessel['operationalStatus']
+                    ?? data_get($record->current_vessel, 'operational_status'),
+                'position_at' => now()->toISOString(),
+                // AIS-enriched fields — preserve values written by VesselAisPollJob
+                'destination' => data_get($record->current_vessel, 'destination'),
+                'current_port' => data_get($record->current_vessel, 'current_port'),
+                'ais_eta' => data_get($record->current_vessel, 'ais_eta'),
+            ],
+
+            // insights JSON
+            'insights' => [
+                'arrival_delay_days' => $insights['arrivalDelayDays']
+                    ?? data_get($record->insights, 'arrival_delay_days'),
+                'initial_carrier_eta' => $insights['initialCarrierEta']
+                    ?? data_get($record->insights, 'initial_carrier_eta'),
+                'has_rollover' => !empty($rollovers),
+            ],
+
+            'pol_change_history' => !empty($insights['portOfLoadingChange'])
+                ? $insights['portOfLoadingChange']
+                : ($record->pol_change_history ?? []),
+
+            'pod_change_history' => !empty($insights['portOfDischargeChange'])
+                ? $insights['portOfDischargeChange']
+                : ($record->pod_change_history ?? []),
 
             'last_synced_at' => now(),
             'raw_shipment_snapshot' => $shipment,
             'eta_history' => $etaHistory,
-            'rollover_history' => !empty($rollovers) ? $rollovers : $record->rollover_history,
-            'transshipment_ports' => !empty($transshipmentPorts) ? $transshipmentPorts : $record->transshipment_ports,
+            'rollover_history' => !empty($rollovers) ? $rollovers : ($record->rollover_history ?? []),
+            'transshipment_ports' => !empty($normalizedTransshipmentPorts)
+                ? $normalizedTransshipmentPorts
+                : ($record->transshipment_ports ?? []),
         ]);
 
         $trip = $record->trip;
         if (!$trip) return;
 
-        // Sync vessel + port info back to Trip (auto-fills what user had to enter manually)
+        // Sync relevant fields back to Trip
         $tripUpdates = $this->buildTripUpdatesFromShipment($attrs, $trip);
         if (!empty($tripUpdates)) {
             $trip->updateQuietly($tripUpdates);
             $trip = $trip->fresh();
         }
 
-        // Auto-advance TripStatus from coarse transportationStatus signal
+        // Transportation status → TripStatus advancement
         if ($transportationStatus) {
-            $targetStatus = $this->transportationStatusToTripStatus($transportationStatus);
-            if ($targetStatus && $trip->status->canTransitionTo($targetStatus)) {
-                $this->advanceTripStatus($trip, $targetStatus, [
-                    'triggered_by' => 'kpler_transportation_status',
-                    'transportation_status' => $transportationStatus,
-                ]);
-                $trip = $trip->fresh();
-            }
+            $trip = $this->handleTransportationStatusChange(
+                $trip,
+                $transportationStatus
+            );
         }
 
-        // Handle POD actual arrival → VesselArrived
+        // POD actual arrival — fire audit event only
+        // Note: we no longer advance TripStatus here.
+        // left_the_port_of_discharge drives Delivered/OutForDelivery.
         if ($podArrivalStatus === 'actual' && $podArrivalTimestamp) {
-            if ($trip->status->canTransitionTo(TripStatus::VesselArrived)) {
-                $this->advanceTripStatus($trip, TripStatus::VesselArrived, [
-                    'triggered_by' => 'kpler_pod_actual_arrival',
-                    'arrived_at' => $podArrivalTimestamp,
+            $alreadyFired = TripEvent::where('trip_id', $trip->id)
+                ->where('event_type', 'container_arrived_at_pod')
+                ->exists();
+
+            if (!$alreadyFired) {
+                TripEvent::create([
+                    'customer_id' => $trip->customer_id,
+                    'trip_id' => $trip->id,
+                    'event_type' => 'container_arrived_at_pod',
+                    'event_data' => ['arrived_at' => $podArrivalTimestamp],
+                    'actor_type' => 'system',
+                    'actor_id' => null,
+                    'created_at' => now(),
                 ]);
-                $trip = $trip->fresh();
             }
         }
 
-        // Create TripEvents for vessel rollovers (only on first detection)
+        // Rollover events
         if (!empty($rollovers) && !$wasRolled) {
             foreach ($rollovers as $rollover) {
                 TripEvent::create([
                     'customer_id' => $trip->customer_id,
                     'trip_id' => $trip->id,
                     'event_type' => 'vessel_rollover',
-                    'previous_status' => null,
-                    'new_status' => null,
                     'event_data' => $rollover,
                     'actor_type' => 'system',
                     'actor_id' => null,
@@ -348,6 +397,31 @@ class ContainerTrackingService
             ]);
         }
 
+        // Port change alert events
+        if (!empty($insights['portOfLoadingChange'])) {
+            TripEvent::create([
+                'customer_id' => $trip->customer_id,
+                'trip_id' => $trip->id,
+                'event_type' => 'port_of_loading_changed',
+                'event_data' => $insights['portOfLoadingChange'],
+                'actor_type' => 'system',
+                'actor_id' => null,
+                'created_at' => now(),
+            ]);
+        }
+
+        if (!empty($insights['portOfDischargeChange'])) {
+            TripEvent::create([
+                'customer_id' => $trip->customer_id,
+                'trip_id' => $trip->id,
+                'event_type' => 'port_of_discharge_changed',
+                'event_data' => $insights['portOfDischargeChange'],
+                'actor_type' => 'system',
+                'actor_id' => null,
+                'created_at' => now(),
+            ]);
+        }
+
         Log::info('ContainerTrackingService: shipment snapshot updated', [
             'trip_id' => $record->trip_id,
             'shipment_id' => $shipmentId,
@@ -355,12 +429,8 @@ class ContainerTrackingService
         ]);
     }
 
-    // Nightly refresh (called by NightlyContainerSyncJob)
+    // Nightly refresh
 
-    /**
-     * Fetch the latest shipment summary from Kpler and process it.
-     * Used as a safety net for missed webhooks.
-     */
     public function refreshShipment(TripContainerTracking $record): void
     {
         if (!$record->mt_shipment_id) return;
@@ -384,17 +454,12 @@ class ContainerTrackingService
 
     // Milestones
 
-    /**
-     * Fetch full transportation timeline from Kpler and sync milestones.
-     * After upserting, derives the correct TripStatus from actual events
-     * and advances the trip accordingly.
-     */
     public function syncMilestones(TripContainerTracking $record): void
     {
         if (!$record->mt_shipment_id) return;
 
         $response = $this->http()
-            ->get("/shipments/{$record->mt_shipment_id}/transportation-timeline");
+            ->get("/shipments/{$record->mt_shipment_id}/milestones");
 
         if ($response->failed()) {
             Log::warning('ContainerTrackingService: milestone fetch failed', [
@@ -415,6 +480,11 @@ class ContainerTrackingService
         );
         usort($allEvents, fn($a, $b) => ($a['eventOrder'] ?? 0) <=> ($b['eventOrder'] ?? 0));
 
+        // Purge and reinsert — milestones are a pure Kpler-derived snapshot.
+        // No user edits, safe to delete and recreate on every sync.
+        // This prevents duplicate accumulation when Kpler rotates event IDs.
+        TripShipmentMilestone::where('trip_id', $record->trip_id)->delete();
+
         foreach ($allEvents as $event) {
             $eventId = $event['id'] ?? null;
             if (!$eventId) continue;
@@ -423,37 +493,45 @@ class ContainerTrackingService
                 $loc = $locations[$event['locationId'] ?? ''] ?? null;
                 $vessel = $vessels[$event['vesselId'] ?? ''] ?? null;
 
-                TripShipmentMilestone::updateOrCreate(
-                    ['trip_id' => $record->trip_id, 'mt_event_id' => $eventId],
-                    [
-                        'customer_id' => $record->customer_id,
-                        'event_category' => isset($event['equipmentEventTypeName']) ? 'equipment' : 'transport',
-                        'event_type' => $event['equipmentEventTypeName']
-                            ?? $event['transportEventTypeName']
-                                ?? 'unknown',
-                        'event_classifier' => $event['eventClassifierCode'] ?? 'planned',
-                        'mode_of_transport' => $event['modeOfTransport'] ?? null,
-                        'equipment_indicator' => $event['equipmentEmptyIndicator'] ?? null,
-                        'location_name' => $loc['name'] ?? null,
-                        'location_unlocode' => $loc['unlocode'] ?? null,
-                        'location_country' => $loc['country'] ?? null,
-                        'location_lat' => $loc['lat'] ?? null,
-                        'location_lng' => $loc['lon'] ?? null,
-                        'terminal_name' => $loc['terminal']['name'] ?? null,
-                        'local_time_offset' => $loc['localTimeOffset'] ?? null,
-                        'location_type' => $loc['type'] ?? null,
-                        'vessel_name' => $vessel['name'] ?? null,
-                        'vessel_imo' => $vessel['imo'] ?? null,
-                        'vessel_mmsi' => $vessel['mmsi'] ?? null,
-                        'voyage_number' => $vessel['voyageNumber'] ?? null,
-                        'sequence_order' => $event['eventOrder'] ?? 0,
-                        'occurred_at' => !empty($event['eventDateTime'])
-                            ? Carbon::parse($event['eventDateTime'])
-                            : null,
-                    ]
-                );
+                TripShipmentMilestone::create([
+                    'trip_id' => $record->trip_id,
+                    'customer_id' => $record->customer_id,
+                    'mt_event_id' => $eventId,
+                    'event_category' => isset($event['equipmentEventTypeName'])
+                        ? 'equipment'
+                        : 'transport',
+                    'event_type' => $event['equipmentEventTypeName']
+                        ?? $event['transportEventTypeName']
+                            ?? 'unknown',
+                    'event_classifier' => $event['eventClassifierCode'] ?? 'planned',
+                    'mode_of_transport' => $event['modeOfTransport'] ?? null,
+                    'equipment_indicator' => $event['equipmentEmptyIndicator'] ?? null,
+                    'location_name' => $loc['name'] ?? null,
+                    'location_unlocode' => $loc['unlocode'] ?? null,
+                    'location_country' => $loc['country'] ?? null,
+                    'location_lat' => $loc['lat'] ?? null,
+                    // Kpler uses 'lon' — normalize to 'lng' on store
+                    'location_lng' => $loc['lon'] ?? null,
+                    'terminal_name' => $loc['terminal']['name'] ?? null,
+                    'local_time_offset' => $loc['localTimeOffset'] ?? null,
+                    // Normalize casing: "port_of_Loading" → "port_of_loading",
+                    //                   "transhipment_Port" → "transhipment_port"
+                    'location_type' => isset($loc['type'])
+                        ? strtolower($loc['type'])
+                        : null,
+                    'vessel_name' => $vessel['name'] ?? null,
+                    'vessel_imo' => $vessel['imo'] ?? null,
+                    'vessel_mmsi' => isset($vessel['mmsi'])
+                        ? (string)$vessel['mmsi']
+                        : null,
+                    'voyage_number' => $vessel['voyageNumber'] ?? null,
+                    'sequence_order' => $event['eventOrder'] ?? 0,
+                    'occurred_at' => !empty($event['eventDateTime'])
+                        ? Carbon::parse($event['eventDateTime'])
+                        : null,
+                ]);
             } catch (\Throwable $e) {
-                Log::error('ContainerTrackingService: failed to upsert milestone', [
+                Log::error('ContainerTrackingService: failed to insert milestone', [
                     'trip_id' => $record->trip_id,
                     'event_id' => $eventId,
                     'error' => $e->getMessage(),
@@ -466,7 +544,6 @@ class ContainerTrackingService
             'event_count' => count($allEvents),
         ]);
 
-        // After all milestones are up to date, derive and apply the correct trip status
         $trip = $record->trip;
         if ($trip && !$trip->isLocked()) {
             $this->deriveAndAdvanceTripStatus($record->trip_id);
@@ -475,12 +552,6 @@ class ContainerTrackingService
 
     // Status advancement from milestones
 
-    /**
-     * Process all actual milestones in sequence order and advance TripStatus
-     * to the furthest valid state. Also applies customs_hold from inspection events.
-     *
-     * Idempotent — canTransitionTo() guards against invalid or backward transitions.
-     */
     private function deriveAndAdvanceTripStatus(int $tripId): void
     {
         $trip = Trip::find($tripId);
@@ -497,7 +568,11 @@ class ContainerTrackingService
 
             $targetStatus = $this->milestoneToTripStatus($milestone);
 
-            if ($targetStatus && $trip->status !== $targetStatus && $trip->status->canTransitionTo($targetStatus)) {
+            if (
+                $targetStatus
+                && $trip->status !== $targetStatus
+                && $trip->status->canTransitionTo($targetStatus)
+            ) {
                 $this->advanceTripStatus($trip, $targetStatus, [
                     'triggered_by' => 'marinetraffic_container_milestone',
                     'event_type' => $milestone->event_type,
@@ -508,7 +583,7 @@ class ContainerTrackingService
             }
         }
 
-        // Apply customs hold from the most recent customs event
+        // Customs hold from latest customs event
         $trip = $trip->fresh();
         $latestCustomsEvent = $milestones
             ->filter(fn($m) => in_array($m->event_type, [
@@ -522,77 +597,190 @@ class ContainerTrackingService
             $shouldHold = $latestCustomsEvent->event_type !== 'customs_released';
             if ($trip->customs_hold !== $shouldHold) {
                 $trip->updateQuietly(['customs_hold' => $shouldHold]);
-
-                Log::info('ContainerTrackingService: customs_hold updated from milestone', [
-                    'trip_id' => $tripId,
-                    'customs_hold' => $shouldHold,
-                    'event_type' => $latestCustomsEvent->event_type,
-                ]);
             }
         }
     }
 
     /**
-     * Map a Kpler milestone event to our TripStatus.
-     *
-     * location_type values from Kpler:
-     *   'port_of_Loading' (note capital L — match case-insensitively)
-     *   'transshipment'
-     *   'port_of_discharge'
+     * Map a milestone event to our TripStatus.
+     * location_type values from Kpler (after strtolower normalization on ingest):
+     *   port_of_loading, port_of_discharge, transhipment_port, via_port, inland_location
+     * Note: "transhipment" is Kpler's spelling (single 's'), not "transshipment".
      */
     private function milestoneToTripStatus(TripShipmentMilestone $milestone): ?TripStatus
     {
         $eventType = strtolower($milestone->event_type ?? '');
         $locationType = strtolower($milestone->location_type ?? '');
 
-        return match (true) {
-            // Container loaded onto the initial vessel at POL
-            in_array($eventType, ['load', 'departure']) && str_contains($locationType, 'port_of_l')
-            => TripStatus::OnVessel,
+        // Any load or departure event (at any location) → trip is Active
+        if (in_array($eventType, ['load', 'departure'])) {
+            return TripStatus::Active;
+        }
 
-            // Vessel arrives at a transshipment port
-            $eventType === 'arrival' && $locationType === 'transshipment'
-            => TripStatus::InTransshipment,
+        // Arrival or discharge at port_of_discharge → Delivered
+        // locationType from docs: "port_of_discharge" (after lowercasing)
+        if (
+            in_array($eventType, ['arrival', 'discharge', 'unload'])
+            && str_contains($locationType, 'port_of_d')
+        ) {
+            return TripStatus::Delivered;
+        }
 
-            // Vessel departs transshipment — now on the next vessel leg
-            $eventType === 'departure' && $locationType === 'transshipment'
-            => TripStatus::OnVessel,
+        return null;
+    }
 
-            // Vessel arrives at or container unloaded at POD
-            in_array($eventType, ['arrival', 'unload']) && str_contains($locationType, 'port_of_d')
-            => TripStatus::VesselArrived,
+    // Transportation status handling
+
+    /**
+     * Handle transportationStatus changes with full Kpler enum awareness.
+     * Returns the (potentially updated) trip model.
+     */
+    private function handleTransportationStatusChange(Trip $trip, string $status): Trip
+    {
+        // routing_data_inconclusive — fire event once, no status change
+        if ($status === 'routing_data_inconclusive') {
+            $alreadyFired = TripEvent::where('trip_id', $trip->id)
+                ->where('event_type', 'routing_data_inconclusive')
+                ->exists();
+
+            if (!$alreadyFired) {
+                TripEvent::create([
+                    'customer_id' => $trip->customer_id,
+                    'trip_id' => $trip->id,
+                    'event_type' => 'routing_data_inconclusive',
+                    'event_data' => ['transportation_status' => $status],
+                    'actor_type' => 'system',
+                    'actor_id' => null,
+                    'created_at' => now(),
+                ]);
+
+                Log::warning('ContainerTrackingService: routing data inconclusive', [
+                    'trip_id' => $trip->id,
+                ]);
+            }
+
+            return $trip;
+        }
+
+        // left_the_port_of_discharge — mode-aware advancement
+        if ($status === 'left_the_port_of_discharge') {
+            $isMultimodal = $trip->transport_mode instanceof TripTransportationMode
+                ? $trip->transport_mode === TripTransportationMode::Multimodal
+                : $trip->transport_mode === TripTransportationMode::Multimodal->value;
+
+            if ($isMultimodal && $trip->status->canTransitionTo(TripStatus::OutForDelivery)) {
+                $this->advanceTripStatus($trip, TripStatus::OutForDelivery, [
+                    'triggered_by' => 'kpler_left_port_of_discharge',
+                    'transportation_status' => $status,
+                ]);
+                return $trip->fresh();
+            }
+
+            if (!$isMultimodal && $trip->status->canTransitionTo(TripStatus::Delivered)) {
+                $this->advanceTripStatus($trip, TripStatus::Delivered, [
+                    'triggered_by' => 'kpler_left_port_of_discharge',
+                    'transportation_status' => $status,
+                ]);
+                return $trip->fresh();
+            }
+
+            return $trip;
+        }
+
+        // All other statuses
+        $targetStatus = $this->mapTransportationStatusToTripStatus($status);
+
+        if (!$targetStatus) {
+            return $trip;
+        }
+
+        if (
+            $targetStatus === TripStatus::Active
+            && $trip->status->canTransitionTo(TripStatus::Active)
+        ) {
+            $this->advanceTripStatus($trip, TripStatus::Active, [
+                'triggered_by' => 'kpler_transportation_status',
+                'transportation_status' => $status,
+            ]);
+            return $trip->fresh();
+        }
+
+        if (
+            $targetStatus === TripStatus::Delivered
+            && $trip->status->canTransitionTo(TripStatus::Delivered)
+        ) {
+            $this->advanceTripStatus($trip, TripStatus::Delivered, [
+                'triggered_by' => 'kpler_transportation_status',
+                'transportation_status' => $status,
+            ]);
+            return $trip->fresh();
+        }
+
+        return $trip;
+    }
+
+    /**
+     * Map full Kpler transportationStatus enum to TripStatus.
+     * Returns null for statuses that need no advancement or special handling.
+     */
+    private function mapTransportationStatusToTripStatus(string $status): ?TripStatus
+    {
+        return match ($status) {
+            // Pre-boarding — ensure trip is Active if still Draft
+            'booked',
+            'not_arrived_at_port_of_loading',
+            'waiting_at_port_of_loading'
+            => TripStatus::Active,
+
+            // Active sea legs
+            'underway_to_a_transhipment_port',
+            'waiting_at_a_transhipment_port',
+            'underway_to_port_of_discharge',
+            'waiting_at_port_of_discharge'
+            => TripStatus::Active,
+
+            // Kpler marks journey complete — map to Delivered (ePOD still needed for Completed)
+            'completed'
+            => TripStatus::Delivered,
+
+            // These are handled separately above, return null here
+            'left_the_port_of_discharge',
+            'routing_data_inconclusive'
+            => null,
 
             default => null,
         };
     }
 
     /**
-     * Map Kpler's coarse transportationStatus to our TripStatus.
+     * Whether AIS polling should be paused for this transportation status.
+     * Container is not loaded on a moving vessel during these states.
      */
-    private function transportationStatusToTripStatus(string $status): ?TripStatus
+    public function shouldPauseAisPolling(?string $status): bool
     {
-        return match (strtolower($status)) {
-            'in_transit' => TripStatus::OnVessel,
-            'delivered', 'arrived' => TripStatus::VesselArrived,
-            default => null,
-        };
+        if ($status === null) return false;
+
+        return in_array($status, [
+            'booked',
+            'not_arrived_at_port_of_loading',
+            'waiting_at_port_of_loading',
+            'waiting_at_a_transhipment_port',
+            'waiting_at_port_of_discharge',
+            'left_the_port_of_discharge',
+            'completed',
+            'routing_data_inconclusive',
+        ], true);
     }
 
     // Trip field sync
 
-    /**
-     * Build the array of Trip field updates from a Kpler shipment payload.
-     * Only updates fields that Kpler has data for; never overwrites with nulls.
-     * Never overwrites port codes if the user already set them (prevents Kpler
-     * overwriting user corrections with stale data).
-     */
     private function buildTripUpdatesFromShipment(array $attrs, Trip $trip): array
     {
         $updates = [];
         $pol = $attrs['portOfLoading'] ?? null;
         $pod = $attrs['portOfDischarge'] ?? null;
 
-        // ETD from POL
+        // ETD from POL departure
         $polDepartureTs = data_get($pol, 'departureDate.timestamp');
         if ($polDepartureTs) {
             $updates['etd'] = Carbon::parse($polDepartureTs);
@@ -608,7 +796,7 @@ class ContainerTrackingService
             }
         }
 
-        // Origin port
+        // Origin port from POL
         $polUnlocode = data_get($pol, 'port.unlocode');
         $polName = data_get($pol, 'port.name');
         if ($polUnlocode) {
@@ -616,7 +804,7 @@ class ContainerTrackingService
             $updates['origin_port_name'] = $polName;
         }
 
-        // Destination port
+        // Destination port from POD
         $podUnlocode = data_get($pod, 'port.unlocode');
         $podName = data_get($pod, 'port.name');
         if ($podUnlocode) {
@@ -636,7 +824,6 @@ class ContainerTrackingService
         $history = $record->eta_history ?? [];
         $lastEntry = !empty($history) ? end($history) : null;
 
-        // Skip if ETA hasn't changed
         if ($lastEntry && $lastEntry['eta'] === $newEta) {
             return $history;
         }
@@ -649,12 +836,24 @@ class ContainerTrackingService
         return $history;
     }
 
-    // Shared status advancement helper
+    // Normalization helpers
 
     /**
-     * Advance a trip to a new status and log the event.
-     * Re-fetches the trip before updating to guard against concurrent advancement.
+     * Normalize transshipment ports: Kpler uses 'lon', we store as 'lng'.
      */
+    private function normalizeTransshipmentPorts(array $ports): array
+    {
+        return array_map(function (array $entry) {
+            if (isset($entry['port']['lon']) && !isset($entry['port']['lng'])) {
+                $entry['port']['lng'] = $entry['port']['lon'];
+                unset($entry['port']['lon']);
+            }
+            return $entry;
+        }, $ports);
+    }
+
+    // Shared advancement helper
+
     private function advanceTripStatus(Trip $trip, TripStatus $newStatus, array $eventData = []): void
     {
         $trip = $trip->fresh();

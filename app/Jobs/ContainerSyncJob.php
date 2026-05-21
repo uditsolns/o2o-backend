@@ -13,11 +13,8 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Safety-net job that re-fetches shipment snapshots and milestone timelines
- * for all active container trackings. Compensates for any webhook delivery
- * failures or network outages that may have caused events to be missed.
- *
- * Runs daily at midnight (see routes/console.php).
+ * Nightly safety-net: re-fetches all active container shipments to compensate
+ * for any missed webhooks during the day.
  */
 class ContainerSyncJob implements ShouldQueue
 {
@@ -25,11 +22,22 @@ class ContainerSyncJob implements ShouldQueue
 
     public int $tries = 1;
 
+    /**
+     * Kpler statuses indicating the sea journey is complete.
+     * No point syncing these — the data won't change.
+     */
+    private const TERMINAL_KPLER_STATUSES = [
+        'left_the_port_of_discharge',
+        'completed',
+    ];
+
     public function handle(ContainerTrackingService $service): void
     {
         $records = TripContainerTracking::with('trip')
             ->where('tracking_status', 'active')
             ->whereNotNull('mt_shipment_id')
+            // Skip if Kpler already considers the journey done
+            ->whereNotIn('transportation_status', self::TERMINAL_KPLER_STATUSES)
             ->whereHas('trip', fn($q) => $q->whereNotIn('status', [
                 TripStatus::Completed->value,
                 TripStatus::Delivered->value,
@@ -38,26 +46,21 @@ class ContainerSyncJob implements ShouldQueue
 
         if ($records->isEmpty()) return;
 
-        Log::info('NightlyContainerSyncJob: syncing active trackings', ['count' => $records->count()]);
+        Log::info('ContainerSyncJob: syncing active trackings', ['count' => $records->count()]);
 
         foreach ($records as $record) {
             try {
-                // 1. Re-fetch shipment summary → updates snapshot + auto-advances status
                 $service->refreshShipment($record);
-
-                // 2. Re-fetch full milestone timeline → fine-grained status advancement
                 $service->syncMilestones($record->fresh());
-
             } catch (\Throwable $e) {
-                Log::error('NightlyContainerSyncJob: sync failed', [
+                Log::error('ContainerSyncJob: sync failed', [
                     'trip_id' => $record->trip_id,
                     'shipment_id' => $record->mt_shipment_id,
                     'error' => $e->getMessage(),
                 ]);
-                // Continue to next record — don't let one failure stop the batch
             }
         }
 
-        Log::info('NightlyContainerSyncJob: completed');
+        Log::info('ContainerSyncJob: completed');
     }
 }

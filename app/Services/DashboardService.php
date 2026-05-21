@@ -33,15 +33,11 @@ class DashboardService
             ],
             'trips' => [
                 'total' => Trip::count(),
-                'draft' => Trip::where('status', TripStatus::Draft)->count(),
-                'in_transit' => Trip::where('status', TripStatus::InTransit)->count(),
-                'at_port' => Trip::where('status', TripStatus::AtPort)->count(),
-                'on_vessel' => Trip::where('status', TripStatus::OnVessel)->count(),
-                'in_transshipment' => Trip::where('status', TripStatus::InTransshipment)->count(),
-                'vessel_arrived' => Trip::where('status', TripStatus::VesselArrived)->count(),
-                'out_for_delivery' => Trip::where('status', TripStatus::OutForDelivery)->count(),
-                'delivered' => Trip::where('status', TripStatus::Delivered)->count(),
-                'completed' => Trip::where('status', TripStatus::Completed)->count(),
+                'draft' => Trip::where('status', TripStatus::Draft->value)->count(),
+                'active' => Trip::where('status', TripStatus::Active->value)->count(),
+                'out_for_delivery' => Trip::where('status', TripStatus::OutForDelivery->value)->count(),
+                'delivered' => Trip::where('status', TripStatus::Delivered->value)->count(),
+                'completed' => Trip::where('status', TripStatus::Completed->value)->count(),
             ],
             'seals' => [
                 'total' => Seal::count(),
@@ -92,12 +88,15 @@ class DashboardService
             'trips' => [
                 'total' => Trip::where('customer_id', $customerId)->count(),
                 'active' => Trip::where('customer_id', $customerId)
-                    ->whereNotIn('status', [TripStatus::Completed, TripStatus::Draft])
-                    ->count(),
+                    ->where('status', TripStatus::Active->value)->count(),
+                'out_for_delivery' => Trip::where('customer_id', $customerId)
+                    ->where('status', TripStatus::OutForDelivery->value)->count(),
+                'delivered' => Trip::where('customer_id', $customerId)
+                    ->where('status', TripStatus::Delivered->value)->count(),
                 'completed' => Trip::where('customer_id', $customerId)
-                    ->where('status', TripStatus::Completed)->count(),
+                    ->where('status', TripStatus::Completed->value)->count(),
                 'draft' => Trip::where('customer_id', $customerId)
-                    ->where('status', TripStatus::Draft)->count(),
+                    ->where('status', TripStatus::Draft->value)->count(),
             ],
             'wallet' => $this->clientWalletSummary($customerId),
             'recent_trips' => Trip::where('customer_id', $customerId)

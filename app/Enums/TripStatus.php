@@ -5,11 +5,7 @@ namespace App\Enums;
 enum TripStatus: string
 {
     case Draft = 'draft';
-    case InTransit = 'in_transit';
-    case AtPort = 'at_port';
-    case OnVessel = 'on_vessel';
-    case InTransshipment = 'in_transshipment';
-    case VesselArrived = 'vessel_arrived';
+    case Active = 'active';
     case OutForDelivery = 'out_for_delivery';
     case Delivered = 'delivered';
     case Completed = 'completed';
@@ -17,12 +13,8 @@ enum TripStatus: string
     public function transitions(): array
     {
         return match ($this) {
-            self::Draft => [self::InTransit],
-            self::InTransit => [self::AtPort],
-            self::AtPort => [self::OnVessel],
-            self::OnVessel => [self::InTransshipment, self::VesselArrived],
-            self::InTransshipment => [self::OnVessel, self::VesselArrived],
-            self::VesselArrived => [self::OutForDelivery, self::Delivered],
+            self::Draft => [self::Active],
+            self::Active => [self::OutForDelivery, self::Delivered],
             self::OutForDelivery => [self::Delivered],
             self::Delivered => [self::Completed],
             self::Completed => [],
@@ -37,5 +29,16 @@ enum TripStatus: string
     public static function values(): array
     {
         return array_column(self::cases(), 'value');
+    }
+
+    public function label(): string
+    {
+        return match ($this) {
+            self::Draft => 'Draft',
+            self::Active => 'Active',
+            self::OutForDelivery => 'Out for Delivery',
+            self::Delivered => 'Delivered',
+            self::Completed => 'Completed',
+        };
     }
 }

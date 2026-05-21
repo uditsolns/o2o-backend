@@ -112,9 +112,10 @@ readonly class TripService
     private function autoStartTrip(Trip $trip, User $by): Trip
     {
         $trip->update([
-            'status' => TripStatus::InTransit,
+            'status' => TripStatus::Active,
             'trip_start_time' => now(),
         ]);
+
 
         // Sepio seal installation — only when user opted in
         if ($trip->uses_sepio_seal && $trip->seal_id && $trip->customer->sepio_company_id) {
@@ -141,7 +142,7 @@ readonly class TripService
             'trip_started',
             ['auto_started' => true],
             TripStatus::Draft->value,
-            TripStatus::InTransit->value,
+            TripStatus::Active->value,
             actorId: $by->id
         );
 
@@ -185,7 +186,7 @@ readonly class TripService
         );
 
         return DB::transaction(function () use ($trip, $data, $by) {
-            $updates = ['status' => TripStatus::InTransit, 'trip_start_time' => now()];
+            $updates = ['status' => TripStatus::Active, 'trip_start_time' => now()];
 
             if (!empty($data['dispatch_date'])) {
                 $updates['dispatch_date'] = $data['dispatch_date'];
@@ -215,7 +216,7 @@ readonly class TripService
                 'trip_started',
                 [],
                 TripStatus::Draft->value,
-                TripStatus::InTransit->value,
+                TripStatus::Active->value,
                 actorId: $by->id
             );
 

@@ -27,7 +27,7 @@ class FastTagPollJob implements ShouldQueue
     public function handle(TripTrackingService $trackingService): void
     {
         // Only active road/multimodal trips with a vehicle number
-        $trips = Trip::whereIn('status', [TripStatus::InTransit, TripStatus::AtPort])
+        $trips = Trip::where('status', TripStatus::Active->value)
             ->whereIn('transport_mode', [
                 TripTransportationMode::Road->value,
                 TripTransportationMode::Multimodal->value,

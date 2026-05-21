@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Inspectors;
 
 use App\Http\Controllers\Controller;
+use App\Models\Trip;
+use App\Models\TripContainerTracking;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -102,7 +104,7 @@ class MarineTrafficInspectorController extends Controller
     {
         $this->guardProd();
 
-        $trackings = \App\Models\TripContainerTracking::with('trip:id,trip_ref,container_number,carrier_scac')
+        $trackings = TripContainerTracking::with('trip:id,trip_ref,container_number,carrier_scac')
             ->whereIn('tracking_status', ['active', 'pending'])
             ->latest()
             ->limit(50)
@@ -122,14 +124,14 @@ class MarineTrafficInspectorController extends Controller
     {
         $this->guardProd();
 
-        $trips = \App\Models\Trip::whereIn('status', ['on_vessel', 'in_transshipment'])
-            ->whereNotNull('vessel_imo_number')
+        $trips = Trip::where('status', 'active')
+            ->whereHas('containerTracking', fn($q) => $q->whereNotNull('current_vessel_imo'))
+            ->with('containerTracking:trip_id,current_vessel_imo,transportation_status')
             ->latest()
             ->limit(50)
             ->get([
-                'id', 'trip_ref', 'vessel_name', 'vessel_imo_number',
-                'mt_vessel_ship_id', 'container_number', 'carrier_scac',
-                'status', 'eta', 'last_vessel_position_at',
+                'id', 'trip_ref', 'container_number', 'carrier_scac',
+                'status', 'eta',
             ]);
 
         return response()->json($trips);
