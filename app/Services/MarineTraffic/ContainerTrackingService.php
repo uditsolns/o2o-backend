@@ -10,6 +10,7 @@ use App\Models\TripEvent;
 use App\Models\TripShipmentMilestone;
 use App\Jobs\SyncContainerMilestonesJob;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -147,7 +148,7 @@ class ContainerTrackingService
         $data = $response->json('data') ?? [];
         $status = $data['attributes']['status'] ?? null;
 
-        if ($status === 'success') {
+        if ($status === 'shipment_created_successfully') {
             $shipmentId =
                 data_get($data, 'relationships.shipment.data.shipmentId')
                 ?? data_get($data, 'relationships.shipment.data.id');
@@ -168,7 +169,7 @@ class ContainerTrackingService
                 SyncContainerMilestonesJob::dispatch($record->fresh());
             }
 
-        } elseif ($status === 'failed') {
+        } elseif ($status === 'request_failed') {
             $record->update([
                 'tracking_status' => 'failed',
                 'failed_reason' => $data['attributes']['failed_reason'] ?? 'Unknown',
@@ -183,12 +184,14 @@ class ContainerTrackingService
 
     // Shipment snapshot
 
-    public function processWebhookShipment(array $shipment): void
+    public function processWebhookShipment(array $shipment, ?TripContainerTracking $knownRecord = null): void
     {
         $shipmentId = $shipment['shipmentId'] ?? $shipment['id'] ?? null;
         if (!$shipmentId) return;
 
-        $record = TripContainerTracking::where('mt_shipment_id', $shipmentId)->first();
+        $record = $knownRecord
+            ?? TripContainerTracking::where('mt_shipment_id', $shipmentId)->first();
+
         if (!$record) {
             Log::warning('ContainerTrackingService: unknown shipmentId in webhook', [
                 'shipment_id' => $shipmentId,
@@ -267,6 +270,8 @@ class ContainerTrackingService
                 'lng' => data_get($pol, 'port.lon') ?? data_get($record->pol, 'lng'),
                 'country' => data_get($pol, 'port.country') ?? data_get($record->pol, 'country'),
                 'etd' => data_get($pol, 'departureDate.timestamp') ?? data_get($record->pol, 'etd'),
+                'etd_status' => data_get($pol, 'departureDate.status') ?? null,
+                'local_time_offset' => data_get($pol, 'departureDate.localTimeOffset') ?? null,
                 'loading_vessel' => [
                     'name' => data_get($pol, 'loadingVessel.name') ?? data_get($record->pol, 'loading_vessel.name'),
                     'imo' => data_get($pol, 'loadingVessel.imo') ?? data_get($record->pol, 'loading_vessel.imo'),
@@ -449,7 +454,7 @@ class ContainerTrackingService
         $shipment = $response->json('data');
         if (!$shipment) return;
 
-        $this->processWebhookShipment($shipment);
+        $this->processWebhookShipment($shipment, $record);
     }
 
     // Milestones
@@ -459,7 +464,7 @@ class ContainerTrackingService
         if (!$record->mt_shipment_id) return;
 
         $response = $this->http()
-            ->get("/shipments/{$record->mt_shipment_id}/milestones");
+            ->get("/shipments/{$record->mt_shipment_id}/transportation-timeline");
 
         if ($response->failed()) {
             Log::warning('ContainerTrackingService: milestone fetch failed', [
@@ -480,10 +485,8 @@ class ContainerTrackingService
         );
         usort($allEvents, fn($a, $b) => ($a['eventOrder'] ?? 0) <=> ($b['eventOrder'] ?? 0));
 
-        // Purge and reinsert — milestones are a pure Kpler-derived snapshot.
-        // No user edits, safe to delete and recreate on every sync.
-        // This prevents duplicate accumulation when Kpler rotates event IDs.
-        TripShipmentMilestone::where('trip_id', $record->trip_id)->delete();
+        $rows = [];
+        $now = now();
 
         foreach ($allEvents as $event) {
             $eventId = $event['id'] ?? null;
@@ -493,7 +496,7 @@ class ContainerTrackingService
                 $loc = $locations[$event['locationId'] ?? ''] ?? null;
                 $vessel = $vessels[$event['vesselId'] ?? ''] ?? null;
 
-                TripShipmentMilestone::create([
+                $rows[] = [
                     'trip_id' => $record->trip_id,
                     'customer_id' => $record->customer_id,
                     'mt_event_id' => $eventId,
@@ -514,8 +517,10 @@ class ContainerTrackingService
                     'location_lng' => $loc['lon'] ?? null,
                     'terminal_name' => $loc['terminal']['name'] ?? null,
                     'local_time_offset' => $loc['localTimeOffset'] ?? null,
-                    // Normalize casing: "port_of_Loading" → "port_of_loading",
-                    //                   "transhipment_Port" → "transhipment_port"
+
+                    // Normalize casing:
+                    // "port_of_Loading" -> "port_of_loading"
+                    // "transhipment_Port" -> "transhipment_port"
                     'location_type' => isset($loc['type'])
                         ? strtolower($loc['type'])
                         : null,
@@ -525,13 +530,16 @@ class ContainerTrackingService
                         ? (string)$vessel['mmsi']
                         : null,
                     'voyage_number' => $vessel['voyageNumber'] ?? null,
+                    'vessel_operational_status' => $vessel['operationalStatus'] ?? null,
                     'sequence_order' => $event['eventOrder'] ?? 0,
                     'occurred_at' => !empty($event['eventDateTime'])
                         ? Carbon::parse($event['eventDateTime'])
                         : null,
-                ]);
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ];
             } catch (\Throwable $e) {
-                Log::error('ContainerTrackingService: failed to insert milestone', [
+                Log::error('ContainerTrackingService: failed to prepare milestone row', [
                     'trip_id' => $record->trip_id,
                     'event_id' => $eventId,
                     'error' => $e->getMessage(),
@@ -539,9 +547,38 @@ class ContainerTrackingService
             }
         }
 
+        try {
+            DB::transaction(function () use ($record, $rows) {
+
+                // Purge and reinsert — milestones are a pure Kpler-derived snapshot.
+                // No user edits, safe to delete and recreate on every sync.
+                // This prevents duplicate accumulation when Kpler rotates event IDs.
+                TripShipmentMilestone::where('trip_id', $record->trip_id)->delete();
+
+                if (empty($rows)) {
+                    return;
+                }
+
+                // Chunk inserts for safety on very large timelines
+                foreach (array_chunk($rows, 500) as $chunk) {
+                    TripShipmentMilestone::insert($chunk);
+                }
+            });
+
+        } catch (\Throwable $e) {
+
+            Log::error('ContainerTrackingService: milestone sync transaction failed', [
+                'trip_id' => $record->trip_id,
+                'shipment_id' => $record->mt_shipment_id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return;
+        }
+
         Log::info('ContainerTrackingService: milestones synced', [
             'trip_id' => $record->trip_id,
-            'event_count' => count($allEvents),
+            'event_count' => count($rows),
         ]);
 
         $trip = $record->trip;

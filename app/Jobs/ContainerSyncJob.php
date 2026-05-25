@@ -36,8 +36,10 @@ class ContainerSyncJob implements ShouldQueue
         $records = TripContainerTracking::with('trip')
             ->where('tracking_status', 'active')
             ->whereNotNull('mt_shipment_id')
-            // Skip if Kpler already considers the journey done
-            ->whereNotIn('transportation_status', self::TERMINAL_KPLER_STATUSES)
+            ->where(function ($q) {
+                $q->whereNull('transportation_status')
+                    ->orWhereNotIn('transportation_status', self::TERMINAL_KPLER_STATUSES);
+            })
             ->whereHas('trip', fn($q) => $q->whereNotIn('status', [
                 TripStatus::Completed->value,
                 TripStatus::Delivered->value,
@@ -51,7 +53,7 @@ class ContainerSyncJob implements ShouldQueue
         foreach ($records as $record) {
             try {
                 $service->refreshShipment($record);
-                $service->syncMilestones($record->fresh());
+                $service->syncMilestones($record);
             } catch (\Throwable $e) {
                 Log::error('ContainerSyncJob: sync failed', [
                     'trip_id' => $record->trip_id,

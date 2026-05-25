@@ -35,6 +35,7 @@ class TripShipmentMilestoneResource extends JsonResource
                 'imo' => $this->vessel_imo,
                 'mmsi' => $this->vessel_mmsi,
                 'voyage' => $this->voyage_number,
+                'operational_status' => $this->vessel_operational_status,
             ],
 
             'sequence_order' => $this->sequence_order,

@@ -15,7 +15,7 @@ class TripShipmentMilestone extends Model
         'event_type', 'event_category', 'event_classifier',
         'location_name', 'location_unlocode', 'location_country',
         'location_lat', 'location_lng', 'terminal_name',
-        'vessel_name', 'vessel_imo', 'vessel_mmsi', 'voyage_number',
+        'vessel_name', 'vessel_imo', 'vessel_mmsi', 'voyage_number', 'vessel_operational_status',
         'mode_of_transport', 'local_time_offset', 'equipment_indicator',
         'location_type', 'sequence_order', 'occurred_at',
     ];
