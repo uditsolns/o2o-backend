@@ -19,6 +19,7 @@ class StoreCustomerRequest extends FormRequest
             'company_name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'unique:customers,email'],
             'mobile' => ['required', 'string', 'max:20'],
+            'sepio_enabled' => ['sometimes', 'boolean'],
         ];
     }
 }

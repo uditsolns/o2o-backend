@@ -18,25 +18,36 @@ enum CustomerDocType: string
         return array_column(self::cases(), 'value');
     }
 
-    public static function required(): array
+    /**
+     * Required for ALL customers regardless of Sepio status.
+     */
+    public static function requiredBasic(): array
     {
-        return array_map(
-            fn(self $type) => $type->value,
-            array_filter(
-                self::cases(),
-                fn(self $type) => $type->isRequired()
-            )
-        );
+        return [self::GstCrt->value];
     }
 
-    public function isRequired(): bool
+    /**
+     * Required additionally when customer has Sepio integration enabled.
+     */
+    public static function requiredForSepio(): array
     {
-        return in_array($this, [
-            self::GstCrt,
-            self::PanCard,
-            self::IecCert,
-            self::CertificateOfRegistration,
-            self::SelfStuffingCert,
-        ], true);
+        return [
+            self::IecCert->value,
+            self::PanCard->value,
+            self::CertificateOfRegistration->value,
+            self::SelfStuffingCert->value,
+        ];
+    }
+
+    /**
+     * Full required list for a given context.
+     * Keep the old required() as a convenience alias that returns all Sepio docs
+     * (used internally by Sepio onboarding service).
+     */
+    public static function required(bool $sepioEnabled = false): array
+    {
+        return $sepioEnabled
+            ? array_merge(self::requiredBasic(), self::requiredForSepio())
+            : self::requiredBasic();
     }
 }

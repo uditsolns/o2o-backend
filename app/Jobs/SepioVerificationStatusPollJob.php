@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Enums\CustomerOnboardingStatus;
+use App\Enums\SepioStatus;
 use App\Models\Customer;
 use App\Services\Sepio\SepioClient;
 use Illuminate\Bus\Queueable;
@@ -21,19 +22,17 @@ class SepioVerificationStatusPollJob implements ShouldQueue
 
     public function handle(SepioClient $client): void
     {
-        // All customers registered on Sepio but not yet fully verified
-        $customers = Customer::whereNotNull('sepio_company_id')
-            ->whereIn('onboarding_status', [
-                CustomerOnboardingStatus::IlApproved,
-                CustomerOnboardingStatus::MfgRejected,
+        // Only poll customers with Sepio enabled and awaiting verification
+        $customers = Customer::where('sepio_enabled', true)
+            ->whereIn('sepio_status', [
+                SepioStatus::VerificationPending->value,
+                SepioStatus::Rejected->value,
             ])
+            ->whereNotNull('sepio_company_id')
             ->get();
 
         if ($customers->isEmpty()) return;
 
-        // Log::info('customers', $customers->toArray());
-
-        // Sepio allows max 100 per request — chunk accordingly
         $customers->chunk(100)->each(function ($chunk) use ($client) {
             try {
                 $this->pollChunk($client, $chunk);
@@ -83,6 +82,7 @@ class SepioVerificationStatusPollJob implements ShouldQueue
     private function markCompleted(Customer $customer): void
     {
         $customer->update([
+            'sepio_status' => SepioStatus::Verified,
             'onboarding_status' => CustomerOnboardingStatus::Completed,
         ]);
 
@@ -94,7 +94,8 @@ class SepioVerificationStatusPollJob implements ShouldQueue
         $rejected = implode(', ', $result['rejectedDocuments'] ?? []);
 
         $customer->update([
-            'onboarding_status' => CustomerOnboardingStatus::MfgRejected,
+            'sepio_status' => SepioStatus::Rejected,
+            // Do NOT change onboarding_status — platform approval stays intact
             'il_remarks' => "Sepio rejected documents: {$rejected}",
         ]);
 

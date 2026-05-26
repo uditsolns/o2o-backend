@@ -31,7 +31,6 @@ class OnboardingController extends Controller
     public function status(Request $request): JsonResponse
     {
         $customer = $this->resolveCustomer($request);
-
         $customer->load('signatories', 'documents', 'ports');
 
         $uploadedDocTypes = $customer->documents
@@ -40,17 +39,20 @@ class OnboardingController extends Controller
 
         return response()->json([
             'onboarding_status' => $customer->onboarding_status,
+            'sepio_enabled' => $customer->sepio_enabled,
+            'sepio_status' => $customer->sepio_status,
             'can_submit' => $this->canSubmit($customer),
             'customer' => new CustomerResource($customer),
             'signatories' => AuthorizedSignatoryResource::collection($customer->signatories),
             'documents' => CustomerDocumentResource::collection($customer->documents),
-            'ports' => $customer->ports,
+            'ports' => $customer->sepio_enabled ? $customer->ports : [],
             'checklist' => [
                 'profile_complete' => $this->isProfileComplete($customer),
                 'has_signatories' => $customer->signatories->isNotEmpty(),
-                'required_docs' => CustomerDocType::required(),
+                'required_docs' => CustomerDocType::required($customer->sepio_enabled),
                 'uploaded_doc_types' => $uploadedDocTypes,
-                'has_ports' => $customer->ports->isNotEmpty(),
+                // Ports only relevant for Sepio customers
+                'has_ports' => !$customer->sepio_enabled || $customer->ports->isNotEmpty(),
             ],
         ]);
     }
@@ -205,18 +207,23 @@ class OnboardingController extends Controller
         if ($document->customer_id !== $user->customer_id) abort(403);
     }
 
+
     private function isProfileComplete(mixed $customer): bool
     {
+        // Fields required for ALL customers
         $required = [
             'company_type',
             'gst_number',
-            'pan_number',
-            'iec_number',
             'billing_address',
             'billing_city',
             'billing_state',
             'billing_pincode',
         ];
+
+        // IEC additionally required for Sepio customers
+        if ($customer->sepio_enabled) {
+            $required[] = 'iec_number';
+        }
 
         foreach ($required as $field) {
             if (empty($customer->$field)) {
@@ -234,13 +241,18 @@ class OnboardingController extends Controller
             ->all();
 
         $hasRequiredDocs = empty(array_diff(
-            CustomerDocType::required(),
+            CustomerDocType::required($customer->sepio_enabled),
             $uploadedDocTypes
         ));
 
+        $hasSignatories = $customer->signatories->isNotEmpty();
+
+        // Ports required only for Sepio customers
+        $hasPorts = !$customer->sepio_enabled || $customer->ports->isNotEmpty();
+
         return $this->isProfileComplete($customer)
-            && $customer->signatories->isNotEmpty()
-            && $customer->ports->isNotEmpty()
+            && $hasSignatories
+            && $hasPorts
             && $hasRequiredDocs;
     }
 

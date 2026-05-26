@@ -22,12 +22,16 @@ class CustomerResource extends JsonResource
             'industry_type' => $this->industry_type,
             'onboarding_status' => $this->onboarding_status,
             'is_active' => $this->is_active,
+
+            // Sepio
+            'sepio_enabled' => $this->sepio_enabled,
+            'sepio_status' => $this->sepio_status,
+
+            // Core business fields
             'iec_number' => $this->iec_number,
             'gst_number' => $this->gst_number,
-            'pan_number' => $this->pan_number,
-            'cin_number' => $this->cin_number,
-            'tin_number' => $this->tin_number,
-            'cha_number' => $this->cha_number,
+
+            // Billing
             'billing_address' => $this->billing_address,
             'billing_landmark' => $this->billing_landmark,
             'billing_city' => $this->billing_city,

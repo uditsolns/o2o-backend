@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\CustomerDocType;
 use App\Enums\CustomerOnboardingStatus;
 use App\Jobs\SepioUploadDocumentJob;
 use App\Models\AuthorizedSignatory;
@@ -152,14 +153,24 @@ class OnboardingService
         return $customer->fresh();
     }
 
-    private function assertReadyToSubmit(Customer $customer): void
+    public function assertReadyToSubmit(Customer $customer): void
     {
         $errors = [];
 
+        // Fields required for ALL customers
         $requiredFields = [
-            'company_type', 'gst_number', 'pan_number', 'iec_number',
-            'billing_address', 'billing_city', 'billing_state', 'billing_pincode',
+            'company_type',
+            'gst_number',
+            'billing_address',
+            'billing_city',
+            'billing_state',
+            'billing_pincode',
         ];
+
+        // IEC is additionally required when Sepio will be used
+        if ($customer->sepio_enabled) {
+            $requiredFields[] = 'iec_number';
+        }
 
         foreach ($requiredFields as $field) {
             if (empty($customer->$field)) {
@@ -171,11 +182,13 @@ class OnboardingService
             $errors[] = 'At least one authorized signatory is required.';
         }
 
-        $requiredDocTypes = ['gst_cert', 'pan_card', 'iec_cert'];
         $uploaded = $customer->documents()
             ->pluck('doc_type')
             ->map(fn($t) => is_string($t) ? $t : $t->value)
             ->all();
+
+        // Required docs depend on Sepio enablement
+        $requiredDocTypes = CustomerDocType::required($customer->sepio_enabled);
 
         foreach ($requiredDocTypes as $type) {
             if (!in_array($type, $uploaded, true)) {
@@ -183,8 +196,16 @@ class OnboardingService
             }
         }
 
+        // Ports only required for Sepio customers
+        if ($customer->sepio_enabled && $customer->ports()->count() === 0) {
+            $errors[] = 'At least one port is required before submission.';
+        }
+
         if (!empty($errors)) {
-            abort(response()->json(['message' => 'Onboarding incomplete.', 'errors' => $errors], 422));
+            abort(response()->json([
+                'message' => 'Onboarding incomplete.',
+                'errors' => $errors,
+            ], 422));
         }
     }
 }

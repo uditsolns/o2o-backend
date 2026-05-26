@@ -49,4 +49,10 @@ class CustomerPolicy
     {
         return $user->hasPermission('customer.park');
     }
+
+    public function enableSepio(User $user, Customer $customer): bool
+    {
+        // Only platform users can enable Sepio on a customer
+        return $user->isPlatformUser() && $user->hasPermission('customer.approve');
+    }
 }

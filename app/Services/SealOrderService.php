@@ -6,6 +6,7 @@ use App\Enums\SealOrderStatus;
 use App\Enums\WalletCoastingType;
 use App\Jobs\SepioPlaceOrderJob;
 use App\Models\Customer;
+use App\Models\CustomerLocation;
 use App\Models\CustomerPort;
 use App\Models\CustomerWallet;
 use App\Models\SealOrder;
@@ -27,7 +28,13 @@ readonly class SealOrderService
         } else {
             $customer = $orderedBy->customer;
         }
-        
+
+        abort_unless(
+            $customer->isSepioEnabled() && $customer->isSepioVerified(),
+            403,
+            'Seal orders require Sepio integration to be enabled and verified.'
+        );
+
         $wallet = $customer->wallet;
 
         abort_if(!$wallet, 422, 'Customer wallet has not been configured yet.');
@@ -41,6 +48,18 @@ readonly class SealOrderService
         $freightAmount = round($data['quantity'] * $wallet->freight_rate_per_seal, 2);
         $gstAmount = round(($sealCost + $freightAmount) * 0.18, 2);
         $totalAmount = round($sealCost + $freightAmount + $gstAmount, 2);
+
+        $billingLocation = CustomerLocation::where('id', $data['billing_location_id'])
+            ->where('customer_id', $customer->id)
+            ->first();
+
+        abort_if(!$billingLocation, 400, 'Billing location is invalid or not found.');
+
+        $shippingLocation = CustomerLocation::where('id', $data['shipping_location_id'])
+            ->where('customer_id', $customer->id)
+            ->first();
+
+        abort_if(!$shippingLocation, 400, 'Shipping location is invalid or not found.');
 
         $ports = CustomerPort::whereIn('id', $data['port_ids'])
             ->where('customer_id', $customer->id)

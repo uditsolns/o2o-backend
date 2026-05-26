@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\CustomerOnboardingStatus;
+use App\Enums\SepioStatus;
 use Illuminate\Database\Eloquent\Casts\AsEncryptedArrayObject;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\{BelongsTo, HasMany, HasOne};
@@ -11,9 +12,10 @@ class Customer extends Model
 {
     protected $fillable = [
         'first_name', 'last_name', 'company_name', 'email', 'mobile',
-        'company_type', 'industry_type', 'onboarding_status', 'sepio_company_id',
-        'gst_number', 'pan_number', 'iec_number', 'cin_number', 'tin_number', 'cha_number',
-        'is_active', 'billing_address', 'billing_landmark', 'billing_city', 'billing_state',
+        'company_type', 'industry_type', 'onboarding_status',
+        'sepio_enabled', 'sepio_status', 'sepio_company_id',
+        'gst_number', 'iec_number', 'is_active',
+        'billing_address', 'billing_landmark', 'billing_city', 'billing_state',
         'billing_pincode', 'billing_country',
         'primary_contact_name', 'primary_contact_email', 'primary_contact_mobile',
         'alternate_contact_name', 'alternate_contact_phone', 'alternate_contact_email',
@@ -23,8 +25,10 @@ class Customer extends Model
 
     protected $casts = [
         'onboarding_status' => CustomerOnboardingStatus::class,
+        'sepio_status' => SepioStatus::class,
         'il_approved_at' => 'datetime',
         'is_active' => 'boolean',
+        'sepio_enabled' => 'boolean',
         'sepio_token_expires_at' => 'datetime',
         'sepio_credentials' => AsEncryptedArrayObject::class,
     ];
@@ -94,6 +98,16 @@ class Customer extends Model
     public function trips(): HasMany
     {
         return $this->hasMany(Trip::class);
+    }
+
+    public function isSepioEnabled(): bool
+    {
+        return (bool)$this->sepio_enabled;
+    }
+
+    public function isSepioVerified(): bool
+    {
+        return $this->sepio_status === SepioStatus::Verified;
     }
 
     public function isOnboarded(): bool

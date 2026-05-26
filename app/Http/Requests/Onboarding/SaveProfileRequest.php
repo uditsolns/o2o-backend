@@ -27,17 +27,18 @@ class SaveProfileRequest extends FormRequest
             // Company — required
             'company_name' => ['required', 'string', 'max:255'],
             'company_type' => ['required', Rule::enum(CompanyType::class)],
-            'iec_number' => ['sometimes', 'string', 'regex:/^IEC\d{7}$/i',
-                Rule::unique('customers', 'iec_number')->ignore($customerId)],
+
+            // GST required for all customers
+            'gst_number' => ['required', 'string', 'regex:/^\d{2}[A-Z]{5}\d{4}[A-Z]\d[Z][A-Z\d]$/i'],
+
+            // IEC only collected/used when Sepio is involved — optional here
+            'iec_number' => [
+                'sometimes', 'nullable', 'string', 'regex:/^IEC\d{7}$/i',
+                Rule::unique('customers', 'iec_number')->ignore($customerId),
+            ],
 
             // Company — optional
             'industry_type' => ['sometimes', 'nullable', 'string', 'max:100'],
-            'gst_number' => ['sometimes', 'nullable', 'string',
-                'regex:/^\d{2}[A-Z]{5}\d{4}[A-Z]\d[Z][A-Z\d]$/i'],
-            'pan_number' => ['sometimes', 'nullable', 'string', 'regex:/^[A-Z]{5}\d{4}[A-Z]$/i'],
-            'cin_number' => ['sometimes', 'nullable', 'string', 'max:25'],
-            'tin_number' => ['sometimes', 'nullable', 'string', 'max:30'],
-            'cha_number' => ['sometimes', 'nullable', 'string', 'max:30'],
 
             // Billing address — required
             'billing_address' => ['required', 'string'],
@@ -45,8 +46,6 @@ class SaveProfileRequest extends FormRequest
             'billing_state' => ['required', 'string', 'max:100'],
             'billing_country' => ['sometimes', 'nullable', 'string', 'max:100'],
             'billing_pincode' => ['sometimes', 'nullable', 'string', 'regex:/^\d{6}$/'],
-
-            // Billing address — optional
             'billing_landmark' => ['sometimes', 'nullable', 'string', 'max:255'],
 
             // Primary contact — required

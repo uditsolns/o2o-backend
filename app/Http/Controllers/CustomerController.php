@@ -109,6 +109,28 @@ class CustomerController extends Controller
         return response()->json(new CustomerResource($customer));
     }
 
+    public function sepioReadiness(Customer $customer): JsonResponse
+    {
+        $this->authorize('update', $customer); // Platform users only
+
+        $customer->load('ports', 'locations', 'documents');
+
+        $readiness = $this->service->getSepioReadiness($customer);
+
+        return response()->json($readiness);
+    }
+
+    public function enableSepio(Customer $customer): JsonResponse
+    {
+        $this->authorize('enableSepio', $customer);
+
+        $customer->load('ports', 'locations', 'documents');
+
+        $customer = $this->service->enableSepio($customer);
+
+        return response()->json(new CustomerResource($customer));
+    }
+
     public function documents(Customer $customer): JsonResponse
     {
         $this->authorize('view', $customer);

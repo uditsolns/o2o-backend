@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\CustomerOnboardingStatus;
 use App\Enums\SealOrderStatus;
 use App\Enums\SealStatus;
+use App\Enums\SepioStatus;
 use App\Enums\TripStatus;
 use App\Models\Customer;
 use App\Models\Seal;
@@ -23,6 +24,11 @@ class DashboardService
                 'il_approved' => Customer::where('onboarding_status', CustomerOnboardingStatus::IlApproved)->count(),
                 'il_parked' => Customer::where('onboarding_status', CustomerOnboardingStatus::IlParked)->count(),
                 'completed' => Customer::where('onboarding_status', CustomerOnboardingStatus::Completed)->count(),
+                // Sepio-specific breakdown (only meaningful for sepio_enabled customers)
+                'sepio_verification_pending' => Customer::where('sepio_enabled', true)
+                    ->where('sepio_status', SepioStatus::VerificationPending)->count(),
+                'sepio_rejected' => Customer::where('sepio_enabled', true)
+                    ->where('sepio_status', SepioStatus::Rejected)->count(),
             ],
             'orders' => [
                 'total' => SealOrder::count(),

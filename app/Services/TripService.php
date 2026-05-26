@@ -8,6 +8,7 @@ use App\Enums\TripTransportationMode;
 use App\Enums\UserStatus;
 use App\Exceptions\SepioException;
 use App\Jobs\RegisterContainerTrackingJob;
+use App\Models\Customer;
 use App\Models\CustomerConsignee;
 use App\Models\CustomerConsignor;
 use App\Models\Role;
@@ -36,9 +37,11 @@ readonly class TripService
             ? ($data['customer_id'] ?? null)
             : $createdBy->customer_id;
 
+        $customer = Customer::findOrFail($customerId);
+
         abort_if(!$customerId, 400, 'customer_id is required for platform users.');
 
-        return DB::transaction(function () use ($data, $createdBy, $customerId) {
+        return DB::transaction(function () use ($data, $createdBy, $customer) {
             $segments = $data['segments'] ?? [];
             $sealId = $data['seal_id'] ?? null;
             $usesSepioPSeal = (bool)($data['uses_sepio_seal'] ?? false);
@@ -50,7 +53,7 @@ readonly class TripService
 
             $trip = Trip::create([
                 ...$data,
-                'customer_id' => $customerId,
+                'customer_id' => $customer->id,
                 'created_by_id' => $createdBy->id,
                 'trip_ref' => $this->generateTripRef(),
                 'status' => TripStatus::Draft,
@@ -67,6 +70,10 @@ readonly class TripService
 
             // Seal assignment
             if ($sealId) {
+                if ($usesSepioPSeal && !$customer->isSepioEnabled()) {
+                    abort(422, 'Sepio seal usage requires Sepio integration to be enabled and verified.');
+                }
+
                 $seal = Seal::findOrFail($sealId);
 
                 if ($usesSepioPSeal) {
@@ -88,17 +95,17 @@ readonly class TripService
             }
 
             // Auto-create driver user, consignor, consignee, route
-            $this->upsertDriverUser($customerId, $trip);
-            $this->upsertConsignor($customerId, $trip);
-            $this->upsertConsignee($customerId, $trip);
-            $this->routeService->findOrCreateFromTripData($customerId, $data);
+            $this->upsertDriverUser($customer->id, $trip);
+            $this->upsertConsignor($customer->id, $trip);
+            $this->upsertConsignee($customer->id, $trip);
+            $this->routeService->findOrCreateFromTripData($customer->id, $data);
 
             // Store segments
             foreach ($segments as $segmentData) {
                 TripSegment::create([
                     ...$segmentData,
                     'trip_id' => $trip->id,
-                    'customer_id' => $customerId,
+                    'customer_id' => $customer->id,
                 ]);
             }
 

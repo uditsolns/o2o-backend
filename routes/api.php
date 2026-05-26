@@ -61,6 +61,9 @@ Route::prefix('v1')->group(function () {
         Route::post('customers/{customer}/approve', [CustomerController::class, 'approve']);
         Route::post('customers/{customer}/reject', [CustomerController::class, 'reject']);
         Route::post('customers/{customer}/park', [CustomerController::class, 'park']);
+        // Sepio management (platform users only)
+        Route::get('customers/{customer}/sepio-readiness', [CustomerController::class, 'sepioReadiness']);
+        Route::post('customers/{customer}/enable-sepio', [CustomerController::class, 'enableSepio']);
         Route::post('customers/{customer}/signatories', [OnboardingController::class, 'addSignatory']);
         Route::put('customers/{customer}/signatories/{signatory}', [OnboardingController::class, 'updateSignatory']);
         Route::delete('customers/{customer}/signatories/{signatory}', [OnboardingController::class, 'deleteSignatory']);
