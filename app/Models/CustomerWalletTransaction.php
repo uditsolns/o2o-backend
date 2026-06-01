@@ -11,7 +11,8 @@ class CustomerWalletTransaction extends Model
 
     protected $fillable = [
         'wallet_id', 'customer_id', 'type', 'amount',
-        'reference_type', 'reference_id', 'balance_after',
+        'reference_type', 'reference_id', 'trip_id', 'balance_after',
+        'balance_type', 'receipt_file_url',
     ];
 
     protected $casts = [
@@ -28,5 +29,10 @@ class CustomerWalletTransaction extends Model
     public function customer(): BelongsTo
     {
         return $this->belongsTo(Customer::class);
+    }
+
+    public function trip(): BelongsTo
+    {
+        return $this->belongsTo(Trip::class);
     }
 }

@@ -17,7 +17,7 @@ use App\Models\CustomerDocument;
 use App\Services\OnboardingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Storage;
+use Illuminate\Support\Facades\Storage;
 
 class OnboardingController extends Controller
 {
@@ -25,9 +25,6 @@ class OnboardingController extends Controller
     {
     }
 
-    /**
-     * Current onboarding state — profile completeness, docs uploaded, ports selected.
-     */
     public function status(Request $request): JsonResponse
     {
         $customer = $this->resolveCustomer($request);
@@ -37,22 +34,42 @@ class OnboardingController extends Controller
             ->map(fn($d) => is_string($d->doc_type) ? $d->doc_type : $d->doc_type->value)
             ->all();
 
+        // Pre-compute port categories once — used in both checklist and canSubmit
+        $portCategories = $customer->ports
+            ->map(fn($p) => is_string($p->port_category) ? $p->port_category : $p->port_category->value)
+            ->all();
+
+        $latestHistory = $customer->onboardingHistory()->first();
+
         return response()->json([
             'onboarding_status' => $customer->onboarding_status,
             'sepio_enabled' => $customer->sepio_enabled,
             'sepio_status' => $customer->sepio_status,
-            'can_submit' => $this->canSubmit($customer),
+            'can_submit' => $this->canSubmit($customer, $portCategories),
             'customer' => new CustomerResource($customer),
             'signatories' => AuthorizedSignatoryResource::collection($customer->signatories),
             'documents' => CustomerDocumentResource::collection($customer->documents),
             'ports' => $customer->sepio_enabled ? $customer->ports : [],
+            'latest_action' => $latestHistory ? [
+                'from_status' => $latestHistory->from_status,
+                'to_status' => $latestHistory->to_status,
+                'actor_type' => $latestHistory->actor_type,
+                'remarks' => $latestHistory->remarks,
+                'remarks_file_url' => $latestHistory->remarks_file_url
+                    ? Storage::temporaryUrl($latestHistory->remarks_file_url, now()->addMinutes(30))
+                    : null,
+                'created_at' => $latestHistory->created_at,
+            ] : null,
             'checklist' => [
                 'profile_complete' => $this->isProfileComplete($customer),
                 'has_signatories' => $customer->signatories->isNotEmpty(),
                 'required_docs' => CustomerDocType::required($customer->sepio_enabled),
                 'uploaded_doc_types' => $uploadedDocTypes,
-                // Ports only relevant for Sepio customers
-                'has_ports' => !$customer->sepio_enabled || $customer->ports->isNotEmpty(),
+                // Separate port and ICD — both required for Sepio, always true for non-Sepio
+                'has_port' => !$customer->sepio_enabled
+                    || in_array('port', $portCategories, true),
+                'has_icd' => !$customer->sepio_enabled
+                    || in_array('icd', $portCategories, true),
             ],
         ]);
     }
@@ -72,14 +89,11 @@ class OnboardingController extends Controller
         $this->denyIfSubmitted($request);
 
         $customer = $this->resolveCustomer($request);
-
         $data = $request->safe()->except('id_proof');
 
         if ($request->hasFile('id_proof')) {
-            $path = $request->file('id_proof')->store(
-                "customers/{$customer->id}/signatories",
-            );
-            $data['id_proof_url'] = $path;
+            $data['id_proof_url'] = $request->file('id_proof')
+                ->store("customers/{$customer->id}/signatories");
         }
 
         $signatory = $this->service->addSignatory($customer, $data);
@@ -96,9 +110,8 @@ class OnboardingController extends Controller
 
         if ($request->hasFile('id_proof')) {
             if ($signatory->id_proof_url) Storage::delete($signatory->id_proof_url);
-            $data['id_proof_url'] = $request->file('id_proof')->store(
-                "customers/{$signatory->customer_id}/signatories",
-            );
+            $data['id_proof_url'] = $request->file('id_proof')
+                ->store("customers/{$signatory->customer_id}/signatories");
         }
 
         $signatory = $this->service->updateSignatory($signatory, $data);
@@ -110,7 +123,6 @@ class OnboardingController extends Controller
     {
         $this->denyIfSubmitted($request);
         $this->authorizeSignatory($request, $signatory);
-
         $this->service->deleteSignatory($signatory);
 
         return response()->json(['message' => 'Signatory removed.']);
@@ -119,8 +131,8 @@ class OnboardingController extends Controller
     public function uploadDocument(UploadDocumentRequest $request): JsonResponse
     {
         $this->denyIfSubmitted($request);
-        $customer = $this->resolveCustomer($request);
 
+        $customer = $this->resolveCustomer($request);
         $document = $this->service->uploadDocument(
             $customer,
             $request->safe()->except('file'),
@@ -134,9 +146,7 @@ class OnboardingController extends Controller
     public function deleteDocument(Request $request, CustomerDocument $document): JsonResponse
     {
         $this->denyIfSubmitted($request);
-
         $this->authorizeDocument($request, $document);
-
         $this->service->deleteDocument($document);
 
         return response()->json(['message' => 'Document removed.']);
@@ -147,7 +157,6 @@ class OnboardingController extends Controller
         $this->denyIfSubmitted($request);
 
         $customer = $this->resolveCustomer($request);
-
         $this->service->savePorts($customer, $request->validated('port_ids'));
 
         return response()->json(['message' => 'Ports saved.']);
@@ -158,8 +167,7 @@ class OnboardingController extends Controller
         $this->denyIfSubmitted($request);
 
         $customer = $this->resolveCustomer($request);
-
-        $customer = $this->service->submit($customer);
+        $customer = $this->service->submit($customer, $request->user());
 
         return response()->json([
             'message' => 'Onboarding submitted successfully.',
@@ -167,16 +175,42 @@ class OnboardingController extends Controller
         ]);
     }
 
-    // Helpers
+    public function acknowledgeRejection(Request $request): JsonResponse
+    {
+        $customer = $this->resolveCustomer($request);
+
+        // Client users can only acknowledge their own rejection.
+        // Platform users can act on behalf of any customer.
+        if ($request->user()->isClientUser()) {
+            abort_if(
+                $request->user()->customer_id !== $customer->id,
+                403,
+                'You can only acknowledge your own rejection.'
+            );
+        }
+
+        $customer = $this->service->acknowledgeRejection($customer, $request->user());
+
+        return response()->json([
+            'message' => 'Rejection acknowledged. You may now update your details and resubmit.',
+            'customer' => new CustomerResource($customer),
+        ]);
+    }
+
+    // ── Private helpers ───────────────────────────────────────────────────────
 
     private function denyIfSubmitted(Request $request): void
     {
         $user = $request->user();
 
-        // Platform users can always modify on behalf of customers
+        // Platform users can always act on behalf of customers
         if ($user->isPlatformUser()) return;
 
         $status = $user->customer?->onboarding_status;
+
+        if ($status === CustomerOnboardingStatus::IlParked) {
+            abort(403, 'Your account is currently on hold pending review by the platform team. You will be notified once a decision is made.');
+        }
 
         $locked = [
             CustomerOnboardingStatus::Submitted,
@@ -189,28 +223,8 @@ class OnboardingController extends Controller
         }
     }
 
-    private function authorizeSignatory(Request $request, AuthorizedSignatory $signatory): void
+    private function isProfileComplete(Customer $customer): bool
     {
-        $user = $request->user();
-
-        if ($user->isPlatformUser()) return;
-
-        if ($signatory->customer_id !== $user->customer_id) abort(403);
-    }
-
-    private function authorizeDocument(Request $request, CustomerDocument $document): void
-    {
-        $user = $request->user();
-
-        if ($user->isPlatformUser()) return;
-
-        if ($document->customer_id !== $user->customer_id) abort(403);
-    }
-
-
-    private function isProfileComplete(mixed $customer): bool
-    {
-        // Fields required for ALL customers
         $required = [
             'company_type',
             'gst_number',
@@ -220,21 +234,22 @@ class OnboardingController extends Controller
             'billing_pincode',
         ];
 
-        // IEC additionally required for Sepio customers
         if ($customer->sepio_enabled) {
             $required[] = 'iec_number';
         }
 
         foreach ($required as $field) {
-            if (empty($customer->$field)) {
-                return false;
-            }
+            if (empty($customer->$field)) return false;
         }
 
         return true;
     }
 
-    private function canSubmit(mixed $customer): bool
+    /**
+     * @param array $portCategories Pre-computed from loaded ports relation.
+     *                              Passed in to avoid re-iterating the collection.
+     */
+    private function canSubmit(Customer $customer, array $portCategories = []): bool
     {
         $uploadedDocTypes = $customer->documents
             ->map(fn($d) => is_string($d->doc_type) ? $d->doc_type : $d->doc_type->value)
@@ -247,8 +262,19 @@ class OnboardingController extends Controller
 
         $hasSignatories = $customer->signatories->isNotEmpty();
 
-        // Ports required only for Sepio customers
-        $hasPorts = !$customer->sepio_enabled || $customer->ports->isNotEmpty();
+        $hasPorts = true;
+        if ($customer->sepio_enabled) {
+            // If portCategories not passed (e.g. called outside status()),
+            // compute it from the loaded relation
+            if (empty($portCategories) && $customer->relationLoaded('ports')) {
+                $portCategories = $customer->ports
+                    ->map(fn($p) => is_string($p->port_category) ? $p->port_category : $p->port_category->value)
+                    ->all();
+            }
+
+            $hasPorts = in_array('port', $portCategories, true)
+                && in_array('icd', $portCategories, true);
+        }
 
         return $this->isProfileComplete($customer)
             && $hasSignatories
@@ -267,5 +293,19 @@ class OnboardingController extends Controller
         }
 
         return $user->customer;
+    }
+
+    private function authorizeSignatory(Request $request, AuthorizedSignatory $signatory): void
+    {
+        $user = $request->user();
+        if ($user->isPlatformUser()) return;
+        if ($signatory->customer_id !== $user->customer_id) abort(403);
+    }
+
+    private function authorizeDocument(Request $request, CustomerDocument $document): void
+    {
+        $user = $request->user();
+        if ($user->isPlatformUser()) return;
+        if ($document->customer_id !== $user->customer_id) abort(403);
     }
 }

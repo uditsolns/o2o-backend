@@ -536,7 +536,6 @@ class ContainerTrackingService
                         ? Carbon::parse($event['eventDateTime'])
                         : null,
                     'created_at' => $now,
-                    'updated_at' => $now,
                 ];
             } catch (\Throwable $e) {
                 Log::error('ContainerTrackingService: failed to prepare milestone row', [

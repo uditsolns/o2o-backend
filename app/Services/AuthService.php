@@ -54,11 +54,11 @@ class AuthService
             ]);
         }
 
-        if ($user->isClientUser() && $user->customer?->onboarding_status !== CustomerOnboardingStatus::Completed) {
-            throw ValidationException::withMessages([
-                'email' => ['Your account setup is not yet complete. Please contact your administrator.'],
-            ]);
-        }
+//        if ($user->isClientUser() && $user->customer?->onboarding_status !== CustomerOnboardingStatus::Completed) {
+//            throw ValidationException::withMessages([
+//                'email' => ['Your account setup is not yet complete. Please contact your administrator.'],
+//            ]);
+//        }
 
         $user->update(['last_login_at' => now()]);
 

@@ -188,6 +188,24 @@ readonly class SepioOnboardingService
         $mapping = $this->docTypeMapping($docType);
         if (!$mapping) return;
 
+        // Sepio-side PDF-only enforcement
+        $pdfOnlyTypes = [
+            CustomerDocType::CertificateOfRegistration,
+            CustomerDocType::SelfStuffingCert,
+        ];
+
+        $extension = strtolower(pathinfo($document->file_name, PATHINFO_EXTENSION));
+
+        if (in_array($docType, $pdfOnlyTypes, true) && $extension !== 'pdf') {
+            Log::warning('Sepio KYC upload skipped — PDF required for this doc type', [
+                'customer_id' => $customer->id,
+                'doc_id' => $document->id,
+                'doc_type' => is_string($docType) ? $docType : $docType->value,
+                'extension' => $extension,
+            ]);
+            return;
+        }
+
         $fileContents = Storage::get($document->url);
 
         if (!$fileContents) {

@@ -111,24 +111,49 @@ class CustomerController extends Controller
 
     public function sepioReadiness(Customer $customer): JsonResponse
     {
-        $this->authorize('update', $customer); // Platform users only
+        $this->authorize('update', $customer);
 
         $customer->load('ports', 'locations', 'documents');
 
-        $readiness = $this->service->getSepioReadiness($customer);
-
-        return response()->json($readiness);
+        return response()->json($this->service->getSepioReadiness($customer));
     }
 
-    public function enableSepio(Customer $customer): JsonResponse
+    public function enableSepio(Customer $customer, Request $request): JsonResponse
     {
         $this->authorize('enableSepio', $customer);
 
         $customer->load('ports', 'locations', 'documents');
 
-        $customer = $this->service->enableSepio($customer);
+        $customer = $this->service->enableSepio($customer, $request->user());
 
         return response()->json(new CustomerResource($customer));
+    }
+
+    public function retrySepioRegistration(Customer $customer, Request $request): JsonResponse
+    {
+        $this->authorize('enableSepio', $customer);
+
+        $customer = $this->service->retrySepioRegistration($customer, $request->user());
+
+        return response()->json(new CustomerResource($customer));
+    }
+
+    public function onboardingHistory(Customer $customer): JsonResponse
+    {
+        $this->authorize('view', $customer);
+
+        return response()->json(
+            $customer->onboardingHistory()->paginate(20)
+        );
+    }
+
+    public function sepioHistory(Customer $customer): JsonResponse
+    {
+        $this->authorize('view', $customer);
+
+        return response()->json(
+            $customer->sepioHistory()->paginate(20)
+        );
     }
 
     public function documents(Customer $customer): JsonResponse
@@ -163,5 +188,18 @@ class CustomerController extends Controller
         return response()->json(
             $customer->trips()->latest()->paginate(20)
         );
+    }
+
+    public function acknowledgeRejection(Request $request, Customer $customer): JsonResponse
+    {
+        // Only the customer themselves or a platform user
+        $this->authorize('update', $customer);
+
+        $customer = $this->service->acknowledgeRejection(
+            $customer,
+            $request->user()
+        );
+
+        return response()->json(new CustomerResource($customer));
     }
 }

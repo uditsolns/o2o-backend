@@ -10,23 +10,30 @@ use App\Models\Customer;
 use App\Models\Role;
 use App\Models\User;
 use App\Notifications\UserInvited;
+use App\Services\Concerns\ChecksSepioReadiness;
+use App\Services\Concerns\RecordsHistory;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\PersonalAccessToken;
 
 class CustomerService
 {
+    use RecordsHistory;
+    use ChecksSepioReadiness;
+
     public function store(array $data, User $createdBy): Customer
     {
         [$customer, $user, $plainPassword] = DB::transaction(function () use ($data, $createdBy) {
             $customer = Customer::create([
                 ...$data,
                 'sepio_enabled' => (bool)($data['sepio_enabled'] ?? false),
+                // sepio_status stays null until onboarding is approved
                 'created_by_id' => $createdBy->id,
             ]);
 
             $role = Role::where('name', 'customer_admin')->firstOrFail();
             $plainPassword = Str::password(12);
+
             $user = User::create([
                 'role_id' => $role->id,
                 'customer_id' => $customer->id,
@@ -37,6 +44,15 @@ class CustomerService
                 'created_by_id' => $createdBy->id,
             ]);
 
+            $this->recordOnboardingHistory(
+                $customer->id,
+                null,
+                CustomerOnboardingStatus::Pending->value,
+                'platform',
+                $createdBy->id,
+                'Customer account created.'
+            );
+
             return [$customer, $user, $plainPassword];
         });
 
@@ -45,8 +61,16 @@ class CustomerService
         return $customer;
     }
 
+    public function update(Customer $customer, array $data): Customer
+    {
+        $customer->update($data);
+        return $customer->fresh();
+    }
+
     public function approve(Customer $customer, array $data, User $by): Customer
     {
+        $fromStatus = $customer->onboarding_status->value;
+
         $customer->update([
             'onboarding_status' => CustomerOnboardingStatus::IlApproved,
             'il_approved_by_id' => $by->id,
@@ -54,78 +78,167 @@ class CustomerService
             'il_remarks' => $data['remarks'] ?? null,
         ]);
 
+        $this->recordOnboardingHistory(
+            $customer->id,
+            $fromStatus,
+            CustomerOnboardingStatus::IlApproved->value,
+            'platform',
+            $by->id,
+            $data['remarks'] ?? null,
+        );
+
         if ($customer->sepio_enabled) {
-            // Sepio path: register company → sync → upload docs → await verification
+            // Run the same readiness checks as enable-sepio.
+            // assertReadyToSubmit() should have already gated submission,
+            // but this is the safety net at approval time.
+            $customer->load('ports', 'locations', 'documents');
+            $readiness = $this->buildSepioReadiness($customer);
+
+            if (!$readiness['is_ready']) {
+                // Roll back the approval — cannot proceed to Sepio with incomplete setup
+                $customer->update([
+                    'onboarding_status' => CustomerOnboardingStatus::Submitted,
+                    'il_approved_by_id' => null,
+                    'il_approved_at' => null,
+                ]);
+
+                abort(response()->json([
+                    'message' => 'Cannot approve: customer is not ready for Sepio integration.',
+                    'missing' => $readiness['missing'],
+                    'checks' => $readiness['checks'],
+                ], 422));
+            }
+
             $customer->update(['sepio_status' => SepioStatus::Pending]);
+
+            $this->recordSepioHistory(
+                $customer->id,
+                null,
+                SepioStatus::Pending->value,
+                'platform',
+                $by->id,
+                'Sepio onboarding initiated on IL approval.'
+            );
+
             SepioOnboardCustomerJob::dispatch($customer->fresh());
         } else {
-            // Non-Sepio path: platform approval is sufficient — go straight to completed
+            // Non-Sepio path: IL approval is sufficient — complete immediately
             $customer->update(['onboarding_status' => CustomerOnboardingStatus::Completed]);
+
+            $this->recordOnboardingHistory(
+                $customer->id,
+                CustomerOnboardingStatus::IlApproved->value,
+                CustomerOnboardingStatus::Completed->value,
+                'system',
+                null,
+                'Auto-completed — Sepio not enabled for this customer.'
+            );
         }
 
         return $customer->fresh();
     }
 
-    // New method: Enable Sepio for an existing customer
-    public function enableSepio(Customer $customer): Customer
+    public function reject(Customer $customer, array $data, User $by): Customer
     {
-        abort_if($customer->sepio_enabled, 422, 'Sepio is already enabled for this customer.');
+        $fromStatus = $customer->onboarding_status->value;
+        $remarksFilePath = null;
 
-        $this->assertSepioReadiness($customer);
+        if (isset($data['remarks_file'])) {
+            $remarksFilePath = $data['remarks_file']->store("customers/{$customer->id}/remarks");
+        }
 
         $customer->update([
-            'sepio_enabled' => true,
-            'sepio_status' => SepioStatus::Pending,
+            'onboarding_status' => CustomerOnboardingStatus::IlRejected,
+            'il_approved_by_id' => $by->id,
+            'il_approved_at' => now(),
+            'il_remarks' => $data['remarks'],
         ]);
 
-        SepioOnboardCustomerJob::dispatch($customer->fresh());
+        $this->recordOnboardingHistory(
+            $customer->id,
+            $fromStatus,
+            CustomerOnboardingStatus::IlRejected->value,
+            'platform',
+            $by->id,
+            $data['remarks'],
+            $remarksFilePath,
+        );
 
         return $customer->fresh();
     }
 
-    public function getSepioReadiness(Customer $customer): array
+    public function park(Customer $customer, array $data, User $by): Customer
     {
-        $uploadedDocTypes = $customer->documents
-            ->map(fn($d) => is_string($d->doc_type) ? $d->doc_type : $d->doc_type->value)
-            ->all();
+        $fromStatus = $customer->onboarding_status->value;
+        $remarksFilePath = null;
 
-        $hasIec = !empty($customer->iec_number);
-        $hasPortPort = $customer->ports()->where('port_category', 'port')->exists();
-        $hasIcdPort = $customer->ports()->where('port_category', 'icd')->exists();
-        $hasIecDoc = in_array('iec_cert', $uploadedDocTypes, true);
-        $hasPanDoc = in_array('pan_card', $uploadedDocTypes, true);
-        $hasCorDoc = in_array('certificate_of_registration', $uploadedDocTypes, true);
-        $hasSelfStuffingDoc = in_array('self_stuffing_cert', $uploadedDocTypes, true);
-        $hasActiveBillingLocation = $customer->locations()->where('is_active', true)->exists();
+        if (isset($data['remarks_file'])) {
+            $remarksFilePath = $data['remarks_file']->store("customers/{$customer->id}/remarks");
+        }
 
-        $checks = [
-            'iec_number' => ['met' => $hasIec, 'message' => 'IEC number must be filled in the customer profile.'],
-            'port_assigned' => ['met' => $hasPortPort, 'message' => 'At least one Port (port category) must be assigned.'],
-            'icd_assigned' => ['met' => $hasIcdPort, 'message' => 'At least one ICD port must be assigned.'],
-            'iec_cert' => ['met' => $hasIecDoc, 'message' => 'IEC certificate document must be uploaded.'],
-            'pan_card' => ['met' => $hasPanDoc, 'message' => 'PAN card document must be uploaded.'],
-            'certificate_of_registration' => ['met' => $hasCorDoc, 'message' => 'Certificate of Registration document must be uploaded.'],
-            'self_stuffing_cert' => ['met' => $hasSelfStuffingDoc, 'message' => 'Self Stuffing Certificate document must be uploaded.'],
-            'billing_location' => ['met' => $hasActiveBillingLocation, 'message' => 'At least one active billing location must exist.'],
-        ];
+        $customer->update([
+            'onboarding_status' => CustomerOnboardingStatus::IlParked,
+            'il_approved_by_id' => $by->id,
+            'il_approved_at' => now(),
+            'il_remarks' => $data['remarks'] ?? null,
+        ]);
 
-        $isReady = collect($checks)->every(fn($check) => $check['met']);
+        $this->recordOnboardingHistory(
+            $customer->id,
+            $fromStatus,
+            CustomerOnboardingStatus::IlParked->value,
+            'platform',
+            $by->id,
+            $data['remarks'] ?? null,
+            $remarksFilePath,
+        );
 
-        return [
-            'is_ready' => $isReady,
-            'checks' => $checks,
-            'missing' => collect($checks)
-                ->filter(fn($check) => !$check['met'])
-                ->map(fn($check) => $check['message'])
-                ->values()
-                ->all(),
-        ];
+        return $customer->fresh();
     }
 
-    private function assertSepioReadiness(Customer $customer): void
+    /**
+     * Customer (or platform on behalf) acknowledges rejection.
+     * il_rejected → pending — reopens editing.
+     */
+    public function acknowledgeRejection(Customer $customer, User $by): Customer
     {
+        abort_if(
+            $customer->onboarding_status !== CustomerOnboardingStatus::IlRejected,
+            422,
+            'Only rejected onboarding can be acknowledged.'
+        );
+
+        $customer->update([
+            'onboarding_status' => CustomerOnboardingStatus::Pending,
+            'il_remarks' => null,
+        ]);
+
+        $this->recordOnboardingHistory(
+            $customer->id,
+            CustomerOnboardingStatus::IlRejected->value,
+            CustomerOnboardingStatus::Pending->value,
+            'customer',
+            $by->id,
+            'Rejection acknowledged. Onboarding reopened for editing.'
+        );
+
+        return $customer->fresh();
+    }
+
+    /**
+     * Platform enables Sepio on an already-completed non-Sepio customer.
+     */
+    public function enableSepio(Customer $customer, User $by): Customer
+    {
+        abort_if($customer->sepio_enabled, 422, 'Sepio is already enabled for this customer.');
+        abort_if(
+            $customer->onboarding_status !== CustomerOnboardingStatus::Completed,
+            422,
+            'Customer must have completed onboarding before enabling Sepio.'
+        );
+
         $customer->load('ports', 'locations', 'documents');
-        $readiness = $this->getSepioReadiness($customer);
+        $readiness = $this->buildSepioReadiness($customer);
 
         if (!$readiness['is_ready']) {
             abort(response()->json([
@@ -134,45 +247,76 @@ class CustomerService
                 'checks' => $readiness['checks'],
             ], 422));
         }
-    }
 
-    public function update(Customer $customer, array $data): Customer
-    {
-        $customer->update($data);
-        return $customer->fresh();
-    }
-
-    public function reject(Customer $customer, array $data, User $by): Customer
-    {
         $customer->update([
-            'onboarding_status' => CustomerOnboardingStatus::IlRejected,
-            'il_approved_by_id' => $by->id,
-            'il_approved_at' => now(),
-            'il_remarks' => $data['remarks'],
+            'sepio_enabled' => true,
+            'sepio_status' => SepioStatus::Pending,
         ]);
 
+        $this->recordSepioHistory(
+            $customer->id,
+            null,
+            SepioStatus::Pending->value,
+            'platform',
+            $by->id,
+            'Sepio integration enabled by platform user.'
+        );
+
+        SepioOnboardCustomerJob::dispatch($customer->fresh());
+
         return $customer->fresh();
     }
 
-    public function park(Customer $customer, array $data, User $by): Customer
+    /**
+     * Platform retries Sepio registration after rejection.
+     */
+    public function retrySepioRegistration(Customer $customer, User $by): Customer
     {
-        $customer->update([
-            'onboarding_status' => CustomerOnboardingStatus::IlParked,
-            'il_approved_by_id' => $by->id,
-            'il_approved_at' => now(),
-            'il_remarks' => $data['remarks'] ?? null,
-        ]);
+        abort_if(!$customer->sepio_enabled, 422, 'Sepio is not enabled for this customer.');
+        abort_if(
+            $customer->sepio_status !== SepioStatus::Rejected,
+            422,
+            'Only Sepio-rejected customers can be retried.'
+        );
+
+        // Clear document-level rejection reasons so fresh uploads are re-evaluated
+        $customer->documents()
+            ->whereNotNull('sepio_rejection_reason')
+            ->update(['sepio_rejection_reason' => null]);
+
+        $fromStatus = $customer->sepio_status->value;
+
+        $customer->update(['sepio_status' => SepioStatus::Pending]);
+
+        $this->recordSepioHistory(
+            $customer->id,
+            $fromStatus,
+            SepioStatus::Pending->value,
+            'platform',
+            $by->id,
+            'Sepio registration retry initiated by platform.'
+        );
+
+        SepioOnboardCustomerJob::dispatch($customer->fresh());
 
         return $customer->fresh();
+    }
+
+    /**
+     * Public readiness check — used by the sepio-readiness endpoint.
+     * Delegates to the shared trait.
+     */
+    public function getSepioReadiness(Customer $customer): array
+    {
+        $customer->loadMissing('ports', 'locations', 'documents');
+        return $this->buildSepioReadiness($customer);
     }
 
     public function toggleActive(Customer $customer): Customer
     {
         $isBeingDeactivated = $customer->is_active;
-
         $customer->update(['is_active' => !$customer->is_active]);
 
-        // Immediately invalidate all sessions for this customer's users
         if ($isBeingDeactivated) {
             PersonalAccessToken::whereHasMorph(
                 'tokenable',

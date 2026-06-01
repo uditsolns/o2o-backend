@@ -20,6 +20,7 @@ class SealOrder extends Model
         'il_approved_by', 'il_approved_at', 'il_remarks', 'il_remark_file_url',
         'sepio_order_id', 'sepio_billing_address_id', 'sepio_shipping_address_id', 'sepio_order_ports',
         'courier_name', 'courier_docket_number', 'seals_dispatched_at', 'seals_delivered_at',
+        'parent_order_id', 'payment_status',
     ];
 
     protected $casts = [
@@ -33,6 +34,7 @@ class SealOrder extends Model
         'freight_amount' => 'decimal:2',
         'gst_amount' => 'decimal:2',
         'total_amount' => 'decimal:2',
+        'payment_status' => 'string',
     ];
 
     protected static function booted(): void
@@ -68,5 +70,20 @@ class SealOrder extends Model
     public function seals(): HasMany
     {
         return $this->hasMany(Seal::class);
+    }
+
+    public function parentOrder(): BelongsTo
+    {
+        return $this->belongsTo(SealOrder::class, 'parent_order_id');
+    }
+
+    public function childOrders(): HasMany
+    {
+        return $this->hasMany(SealOrder::class, 'parent_order_id');
+    }
+
+    public function history(): HasMany
+    {
+        return $this->hasMany(SealOrderHistory::class, 'order_id')->orderByDesc('created_at');
     }
 }

@@ -22,15 +22,7 @@ class UserResource extends JsonResource
                 'permissions' => $this->when($this->role->relationLoaded('permissions'),
                     $this->role->permissions->pluck('name'))
             ]),
-            'customer' => $this->whenLoaded('customer', fn() => [
-                'id' => $this->customer->id,
-                'first_name' => $this->customer->first_name,
-                'last_name' => $this->customer->last_name,
-                'email' => $this->customer->email,
-                'mobile' => $this->customer->mobile,
-                'company_name' => $this->customer->company_name,
-                'onboarding_status' => $this->customer->onboarding_status,
-            ]),
+            'customer' => new CustomerResource($this->whenLoaded('customer')),
             'last_login_at' => $this->last_login_at,
             'created_at' => $this->created_at,
         ];

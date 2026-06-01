@@ -15,7 +15,8 @@ class StoreSealOrderRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'customer_id' => ['required', Rule::requiredIf($this->user()->isPlatformUser()), 'integer', 'exists:customers,id'],
+            'customer_id' => ['nullable', Rule::requiredIf($this->user()->isPlatformUser()), 'integer', 'exists:customers,id'],
+            'parent_order_id' => ['nullable', 'integer', 'exists:seal_orders,id'],
             'quantity' => ['required', 'integer', 'min:20'],
             'payment_type' => ['required', 'in:cash,credit,advance_balance'],
             'billing_location_id' => ['required', 'integer', 'exists:customer_locations,id'],

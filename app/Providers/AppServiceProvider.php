@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Models\SealPricingTier;
+use App\Models\TripPricingRule;
 use App\Models\User;
 use App\Policies\SealPricingPolicy;
 use Illuminate\Support\Facades\Gate;
@@ -33,6 +34,10 @@ class AppServiceProvider extends ServiceProvider
 
         Gate::define('inspect-marinetraffic', function (User $user) {
             return $user->hasPermission('marinetraffic.inspect');
+        });
+
+        Gate::define('trip_pricing.manage', function (User $user) {
+            return $user->isPlatformUser() && $user->hasPermission('pricing.manage');
         });
     }
 }

@@ -54,6 +54,22 @@ class SealOrderResource extends JsonResource
                 'id' => $this->customer->id,
                 'company_name' => $this->customer->company_name,
             ]),
+            'parent_order' => $this->when(
+                $this->parent_order_id,
+                fn() => [
+                    'id' => $this->parentOrder?->id,
+                    'order_ref' => $this->parentOrder?->order_ref,
+                    'status' => $this->parentOrder?->status,
+                ]
+            ),
+            'child_orders' => $this->when(
+                $this->relationLoaded('childOrders'),
+                fn() => $this->childOrders->map(fn($o) => [
+                    'id' => $o->id,
+                    'order_ref' => $o->order_ref,
+                    'status' => $o->status,
+                ])
+            ),
             'ordered_at' => $this->ordered_at,
             'updated_at' => $this->updated_at,
         ];

@@ -15,7 +15,8 @@ class SaveProfileRequest extends FormRequest
 
     public function rules(): array
     {
-        $customerId = $this->user()->customer_id;
+        $user = $this->user();
+        $customerId = $user->isClientUser() ? $user->customer_id : $this->input('customer_id');
 
         return [
             // Personal — required

@@ -19,6 +19,7 @@ use App\Http\Controllers\SealOrderController;
 use App\Http\Controllers\SealPricingController;
 use App\Http\Controllers\TripController;
 use App\Http\Controllers\TripDocumentController;
+use App\Http\Controllers\TripPricingController;
 use App\Http\Controllers\TripTrackingController;
 use App\Http\Controllers\UserController;
 use Illuminate\Support\Facades\Route;
@@ -61,9 +62,13 @@ Route::prefix('v1')->group(function () {
         Route::post('customers/{customer}/approve', [CustomerController::class, 'approve']);
         Route::post('customers/{customer}/reject', [CustomerController::class, 'reject']);
         Route::post('customers/{customer}/park', [CustomerController::class, 'park']);
+        Route::post('customers/{customer}/acknowledge-rejection', [CustomerController::class, 'acknowledgeRejection']);
+        Route::get('customers/{customer}/onboarding-history', [CustomerController::class, 'onboardingHistory']);
         // Sepio management (platform users only)
         Route::get('customers/{customer}/sepio-readiness', [CustomerController::class, 'sepioReadiness']);
         Route::post('customers/{customer}/enable-sepio', [CustomerController::class, 'enableSepio']);
+        Route::post('customers/{customer}/retry-sepio', [CustomerController::class, 'retrySepioRegistration']);
+        Route::get('customers/{customer}/sepio-history', [CustomerController::class, 'sepioHistory']);
         Route::post('customers/{customer}/signatories', [OnboardingController::class, 'addSignatory']);
         Route::put('customers/{customer}/signatories/{signatory}', [OnboardingController::class, 'updateSignatory']);
         Route::delete('customers/{customer}/signatories/{signatory}', [OnboardingController::class, 'deleteSignatory']);
@@ -73,6 +78,10 @@ Route::prefix('v1')->group(function () {
         Route::get('customers/{customer}/seals', [CustomerController::class, 'seals']);
         Route::get('customers/{customer}/orders', [CustomerController::class, 'orders']);
         Route::get('customers/{customer}/trips', [CustomerController::class, 'trips']);
+
+        // Trip Pricing
+        Route::get('trip-pricing', [TripPricingController::class, 'index']);
+        Route::post('trip-pricing/sync', [TripPricingController::class, 'sync']);
 
         // ── Ports (read: all auth; write: IL only via PortPolicy) ─────────────
         Route::apiResource('ports', PortController::class)->except('destroy');
@@ -84,6 +93,8 @@ Route::prefix('v1')->group(function () {
         Route::put('customers/{customer}/wallet', [CustomerWalletController::class, 'update']);
         Route::post('customers/{customer}/wallet/top-up', [CustomerWalletController::class, 'topUp']);
         Route::get('customers/{customer}/wallet/transactions', [CustomerWalletController::class, 'transactions']);
+        Route::post('customers/{customer}/wallet/settle-credit', [CustomerWalletController::class, 'settleCredit']);
+
         // Pricing tiers (IL manages; client reads own)
         Route::get('customers/{customer}/pricing', [SealPricingController::class, 'index']);
         Route::post('customers/{customer}/pricing', [SealPricingController::class, 'sync']);
@@ -103,6 +114,7 @@ Route::prefix('v1')->group(function () {
             Route::delete('documents/{document}', [OnboardingController::class, 'deleteDocument']);
             Route::post('ports', [OnboardingController::class, 'savePorts']);
             Route::post('submit', [OnboardingController::class, 'submit']);
+            Route::post('acknowledge-rejection', [OnboardingController::class, 'acknowledgeRejection']);
         });
 
         // ── Onboarding-gated routes ───────────────────────────────────────────
@@ -125,6 +137,8 @@ Route::prefix('v1')->group(function () {
             Route::post('orders/{order}/approve', [SealOrderController::class, 'approve']);
             Route::post('orders/{order}/reject', [SealOrderController::class, 'reject']);
             Route::post('orders/{order}/park', [SealOrderController::class, 'park']);
+            Route::get('orders/{order}/history', [SealOrderController::class, 'history']);
+            Route::post('orders/{order}/mark-cash-received', [SealOrderController::class, 'markCashPaymentReceived']);
             // Seal ingestion — IL only, hangs off the order
             Route::post('orders/{order}/seals', [SealController::class, 'ingest']);
 
@@ -201,3 +215,15 @@ Route::prefix('v1')->group(function () {
 
     Route::post("commands", CommandController::class);
 });
+
+// RM, Under Writer, Policy Number
+// IEC & GST number optional -> for non sepio integration
+// company type -> non mendatory
+// make signatory optional
+// dispatch date, expected delivery date -> optional
+// invoice number -> optional
+
+// I did not understand anything related to payment and wallet, can you explain me everything about the payment and wallet and transactions. Cash / Credit / Advance Balance - What are they ? When I am creating a seal order why am I shown the value of cost_balance in balance_after ? Can you explain entire flow implemented in our system.
+// we want validation on onboarding and other places too where applicable: to have at least 1 icd as well along with at least one port.
+// Shouldn't we merge the sepio_enabled into sepio_status ? We are by default keeping it null which has no meaning, what do you think ? If we add one more logical, meaningful status to the sepio_status ?
+// Should we merge the trip pricing syncing logic into single /trip-pricing api, they are gonna be used by be used by platform users only. Also modifying the get method to return data based on user and add a filter by customer and other filter just like we have did with other resources. Look how we are using TenantScope and QueryBuilder pattern.  Should we provide the trip pricing in the wallet api same as we are returning pricing teirs for seal orders. ? 

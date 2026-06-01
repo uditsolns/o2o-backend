@@ -21,6 +21,7 @@ class Customer extends Model
         'alternate_contact_name', 'alternate_contact_phone', 'alternate_contact_email',
         'il_approved_by_id', 'il_approved_at', 'il_remarks', 'created_by_id',
         'sepio_token', 'sepio_token_expires_at', 'sepio_credentials',
+        'il_policy_number', 'il_policy_expiry', 'sum_insured', 'gwp',
     ];
 
     protected $casts = [
@@ -31,6 +32,9 @@ class Customer extends Model
         'sepio_enabled' => 'boolean',
         'sepio_token_expires_at' => 'datetime',
         'sepio_credentials' => AsEncryptedArrayObject::class,
+        'il_policy_expiry' => 'date',
+        'sum_insured' => 'decimal:2',
+        'gwp' => 'decimal:2',
     ];
 
     protected $hidden = ['sepio_token', 'sepio_credentials'];
@@ -98,6 +102,16 @@ class Customer extends Model
     public function trips(): HasMany
     {
         return $this->hasMany(Trip::class);
+    }
+
+    public function onboardingHistory(): HasMany
+    {
+        return $this->hasMany(CustomerOnboardingHistory::class)->orderByDesc('created_at');
+    }
+
+    public function sepioHistory(): HasMany
+    {
+        return $this->hasMany(CustomerSepioHistory::class)->orderByDesc('created_at');
     }
 
     public function isSepioEnabled(): bool

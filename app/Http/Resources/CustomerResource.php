@@ -22,6 +22,10 @@ class CustomerResource extends JsonResource
             'industry_type' => $this->industry_type,
             'onboarding_status' => $this->onboarding_status,
             'is_active' => $this->is_active,
+            'il_policy_number' => $this->il_policy_number,
+            'il_policy_expiry' => $this->il_policy_expiry,
+            'sum_insured' => $this->sum_insured,
+            'gwp' => $this->gwp,
 
             // Sepio
             'sepio_enabled' => $this->sepio_enabled,

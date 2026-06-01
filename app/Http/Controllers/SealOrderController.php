@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\SealOrder\ConfirmCashPaymentRequest;
 use App\Http\Requests\SealOrder\SealOrderActionRequest;
 use App\Http\Requests\SealOrder\StoreSealOrderRequest;
+use App\Http\Requests\Wallet\ConfirmCashPaymentRequest;
 use App\Http\Resources\SealOrderResource;
 use App\Models\SealOrder;
 use App\Services\SealOrderService;
@@ -60,7 +62,10 @@ class SealOrderController extends Controller
         $this->authorize('view', $order);
 
         return response()->json(new SealOrderResource(
-            $order->load('billingLocation', 'shippingLocation', 'orderedBy', 'ilApprovedBy')
+            $order->load(
+                'billingLocation', 'shippingLocation',
+                'orderedBy', 'ilApprovedBy', 'parentOrder', 'childOrders',
+            )
         ));
     }
 
@@ -87,6 +92,28 @@ class SealOrderController extends Controller
         $this->authorize('park', $order);
 
         $order = $this->service->park($order, $request->validated(), $request->user());
+
+        return response()->json(new SealOrderResource($order));
+    }
+
+    public function history(SealOrder $order): JsonResponse
+    {
+        $this->authorize('view', $order);
+
+        return response()->json($order->history()->paginate(20));
+    }
+
+    public function markCashPaymentReceived(ConfirmCashPaymentRequest $request, SealOrder $order): JsonResponse
+    {
+        $this->authorize('approve', $order);
+
+        $receiptFilePath = null;
+        if ($request->hasFile('receipt_file')) {
+            $receiptFilePath = $request->file('receipt_file')
+                ->store("orders/{$order->id}/receipts");
+        }
+
+        $order = $this->service->markCashPaymentReceived($order, $request->user(), $receiptFilePath);
 
         return response()->json(new SealOrderResource($order));
     }

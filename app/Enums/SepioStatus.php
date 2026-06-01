@@ -4,6 +4,7 @@ namespace App\Enums;
 
 enum SepioStatus: string
 {
+    case Disabled = 'disabled';
     case Pending = 'pending';
     case Registered = 'registered';
     case DocsUploaded = 'docs_uploaded';

@@ -13,13 +13,13 @@ class CustomerActionRequest extends FormRequest
 
     public function rules(): array
     {
-        // remarks required for rejection, optional for approve/park
-        $remarksRule = str_ends_with($this->route()->getName(), '.reject')
+        $remarksRule = str_ends_with($this->route()->getName() ?? '', 'reject')
             ? ['required', 'string', 'max:2000']
             : ['nullable', 'string', 'max:2000'];
 
         return [
             'remarks' => $remarksRule,
+            'remarks_file' => ['nullable', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:5120'],
         ];
     }
 }

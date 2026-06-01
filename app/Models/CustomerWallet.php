@@ -9,18 +9,16 @@ use Illuminate\Database\Eloquent\Relations\{BelongsTo, HasMany};
 class CustomerWallet extends Model
 {
     protected $fillable = [
-        'customer_id', 'il_policy_number', 'il_policy_expiry', 'sum_insured', 'gwp',
-        'costing_type', 'credit_period', 'credit_capping', 'credit_used',
-        'freight_rate_per_seal', 'cost_balance', 'created_by_id',
+        'customer_id', 'costing_type', 'credit_period', 'credit_capping', 'credit_used',
+        'freight_rate_per_seal', 'cost_balance', 'low_balance_threshold', 'created_by_id',
     ];
 
     protected $casts = [
         'costing_type' => WalletCoastingType::class,
-        'il_policy_expiry' => 'date',
-        'sum_insured' => 'decimal:2',
         'credit_capping' => 'decimal:2',
         'credit_used' => 'decimal:2',
         'cost_balance' => 'decimal:2',
+        'low_balance_threshold' => 'decimal:2',
     ];
 
     public function customer(): BelongsTo
@@ -41,6 +39,11 @@ class CustomerWallet extends Model
     public function pricingTiers(): HasMany
     {
         return $this->hasMany(SealPricingTier::class, 'customer_id', 'customer_id');
+    }
+
+    public function tripPricingRules(): HasMany
+    {
+        return $this->hasMany(TripPricingRule::class, 'customer_id', 'customer_id');
     }
 
     public function hasSufficientBalance(float $amount): bool

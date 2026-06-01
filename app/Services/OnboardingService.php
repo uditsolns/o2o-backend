@@ -11,32 +11,29 @@ use App\Models\CustomerDocument;
 use App\Models\CustomerLocation;
 use App\Models\Port;
 use App\Models\User;
+use App\Services\Concerns\ChecksSepioReadiness;
+use App\Services\Concerns\RecordsHistory;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
 class OnboardingService
 {
+    use RecordsHistory;
+    use ChecksSepioReadiness;
+
     public function saveProfile(Customer $customer, array $data): Customer
     {
         $customer->update($data);
         $customer = $customer->fresh();
 
-        // Upsert a CustomerLocation from the billing address so it can be
-        // synced to Sepio later (after company registration).
         $this->upsertBillingLocation($customer);
 
         return $customer;
     }
 
-    /**
-     * Create or update the single "billing" CustomerLocation derived from the
-     * customer's billing address fields.  We name it after the company so it's
-     * identifiable in the UI.
-     */
     private function upsertBillingLocation(Customer $customer): void
     {
-        // Only create if the minimum required address fields are present
         if (
             empty($customer->billing_address) ||
             empty($customer->billing_city) ||
@@ -60,8 +57,6 @@ class OnboardingService
             'is_active' => true,
         ];
 
-        // Use updateOrCreate keyed on customer_id + name so re-submitting
-        // profile updates the same record rather than creating duplicates.
         CustomerLocation::updateOrCreate(
             ['customer_id' => $customer->id, 'name' => $customer->company_name],
             array_merge($attributes, ['customer_id' => $customer->id])
@@ -142,13 +137,56 @@ class OnboardingService
         });
     }
 
-    public function submit(Customer $customer): Customer
+    public function submit(Customer $customer, User $by): Customer
     {
+        // Must acknowledge rejection before resubmitting
+        abort_if(
+            $customer->onboarding_status === CustomerOnboardingStatus::IlRejected,
+            422,
+            'Please acknowledge the rejection before resubmitting. Use the acknowledge-rejection endpoint first.'
+        );
+
         $this->assertReadyToSubmit($customer);
+
+        $fromStatus = $customer->onboarding_status->value;
 
         $customer->update([
             'onboarding_status' => CustomerOnboardingStatus::Submitted,
         ]);
+
+        $this->recordOnboardingHistory(
+            $customer->id,
+            $fromStatus,
+            CustomerOnboardingStatus::Submitted->value,
+            'customer',
+            $by->id,
+            'Customer submitted onboarding for review.'
+        );
+
+        return $customer->fresh();
+    }
+
+    public function acknowledgeRejection(Customer $customer, User $by): Customer
+    {
+        abort_if(
+            $customer->onboarding_status !== CustomerOnboardingStatus::IlRejected,
+            422,
+            'Only rejected onboarding can be acknowledged.'
+        );
+
+        $customer->update([
+            'onboarding_status' => CustomerOnboardingStatus::Pending,
+            'il_remarks' => null,
+        ]);
+
+        $this->recordOnboardingHistory(
+            $customer->id,
+            CustomerOnboardingStatus::IlRejected->value,
+            CustomerOnboardingStatus::Pending->value,
+            'customer',
+            $by->id,
+            'Customer acknowledged rejection and reopened onboarding for editing.'
+        );
 
         return $customer->fresh();
     }
@@ -157,7 +195,7 @@ class OnboardingService
     {
         $errors = [];
 
-        // Fields required for ALL customers
+        // ── Profile fields ────────────────────────────────────────────────────
         $requiredFields = [
             'company_type',
             'gst_number',
@@ -167,7 +205,6 @@ class OnboardingService
             'billing_pincode',
         ];
 
-        // IEC is additionally required when Sepio will be used
         if ($customer->sepio_enabled) {
             $requiredFields[] = 'iec_number';
         }
@@ -178,33 +215,44 @@ class OnboardingService
             }
         }
 
+        // ── Signatories ───────────────────────────────────────────────────────
         if ($customer->signatories()->count() === 0) {
             $errors[] = 'At least one authorized signatory is required.';
         }
 
+        // ── Documents ─────────────────────────────────────────────────────────
         $uploaded = $customer->documents()
             ->pluck('doc_type')
             ->map(fn($t) => is_string($t) ? $t : $t->value)
             ->all();
 
-        // Required docs depend on Sepio enablement
-        $requiredDocTypes = CustomerDocType::required($customer->sepio_enabled);
-
-        foreach ($requiredDocTypes as $type) {
+        foreach (CustomerDocType::required($customer->sepio_enabled) as $type) {
             if (!in_array($type, $uploaded, true)) {
                 $errors[] = "Document '{$type}' is required before submission.";
             }
         }
 
-        // Ports only required for Sepio customers
-        if ($customer->sepio_enabled && $customer->ports()->count() === 0) {
-            $errors[] = 'At least one port is required before submission.';
+        // ── Sepio-specific checks — delegate to shared trait ──────────────────
+        // This runs the same checks as enable-sepio and getSepioReadiness(),
+        // ensuring all three gates use identical validation logic.
+        if ($customer->sepio_enabled) {
+            $customer->loadMissing('ports', 'locations', 'documents');
+            $readiness = $this->buildSepioReadiness($customer);
+
+            if (!$readiness['is_ready']) {
+                foreach ($readiness['missing'] as $missing) {
+                    // Avoid duplicating document errors already caught above
+                    if (!in_array($missing, $errors, true)) {
+                        $errors[] = $missing;
+                    }
+                }
+            }
         }
 
         if (!empty($errors)) {
             abort(response()->json([
                 'message' => 'Onboarding incomplete.',
-                'errors' => $errors,
+                'errors' => array_values(array_unique($errors)),
             ], 422));
         }
     }

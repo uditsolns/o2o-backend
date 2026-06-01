@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Enums\CustomerOnboardingStatus;
 use App\Enums\SepioStatus;
 use App\Models\Customer;
+use App\Models\CustomerSepioHistory;
 use App\Services\Sepio\SepioClient;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -22,11 +23,9 @@ class SepioVerificationStatusPollJob implements ShouldQueue
 
     public function handle(SepioClient $client): void
     {
-        // Only poll customers with Sepio enabled and awaiting verification
         $customers = Customer::where('sepio_enabled', true)
             ->whereIn('sepio_status', [
                 SepioStatus::VerificationPending->value,
-                SepioStatus::Rejected->value,
             ])
             ->whereNotNull('sepio_company_id')
             ->get();
@@ -38,12 +37,12 @@ class SepioVerificationStatusPollJob implements ShouldQueue
                 $this->pollChunk($client, $chunk);
             } catch (\Throwable $e) {
                 Log::error('SepioVerificationStatusPollJob: chunk failed', [
-                    'company_ids' => $chunk->pluck('sepio_company_id')->all(),
                     'error' => $e->getMessage(),
                 ]);
             }
         });
     }
+
 
     private function pollChunk(SepioClient $client, Collection $chunk): void
     {
@@ -81,9 +80,19 @@ class SepioVerificationStatusPollJob implements ShouldQueue
 
     private function markCompleted(Customer $customer): void
     {
+        $fromStatus = $customer->sepio_status->value;
+
         $customer->update([
             'sepio_status' => SepioStatus::Verified,
             'onboarding_status' => CustomerOnboardingStatus::Completed,
+        ]);
+
+        CustomerSepioHistory::create([
+            'customer_id' => $customer->id,
+            'from_status' => $fromStatus,
+            'to_status' => SepioStatus::Verified->value,
+            'triggered_by_type' => 'job',
+            'remarks' => 'Sepio document verification passed.',
         ]);
 
         Log::info('Customer Sepio verification completed', ['customer_id' => $customer->id]);
@@ -91,17 +100,34 @@ class SepioVerificationStatusPollJob implements ShouldQueue
 
     private function markRejected(Customer $customer, array $result): void
     {
-        $rejected = implode(', ', $result['rejectedDocuments'] ?? []);
+        $fromStatus = $customer->sepio_status->value;
+        $rejectedDocuments = $result['rejectedDocuments'] ?? [];
+        $rejected = implode(', ', $rejectedDocuments);
+
+        // Mark individual documents with rejection reason
+        foreach ($rejectedDocuments as $rejectedDocType) {
+            $customer->documents()
+                ->where('doc_type', $rejectedDocType)
+                ->update(['sepio_rejection_reason' => 'Rejected by Sepio during verification.']);
+        }
 
         $customer->update([
             'sepio_status' => SepioStatus::Rejected,
-            // Do NOT change onboarding_status — platform approval stays intact
             'il_remarks' => "Sepio rejected documents: {$rejected}",
+        ]);
+
+        CustomerSepioHistory::create([
+            'customer_id' => $customer->id,
+            'from_status' => $fromStatus,
+            'to_status' => SepioStatus::Rejected->value,
+            'triggered_by_type' => 'job',
+            'remarks' => "Sepio rejected the following documents: {$rejected}",
+            'rejected_documents' => $rejectedDocuments,
         ]);
 
         Log::warning('Customer Sepio verification rejected', [
             'customer_id' => $customer->id,
-            'rejected_documents' => $result['rejectedDocuments'],
+            'rejected_documents' => $rejectedDocuments,
         ]);
     }
 }

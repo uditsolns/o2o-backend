@@ -45,7 +45,14 @@ class StoreTripRequest extends FormRequest
             'driver_aadhaar_verification_payload' => ['nullable', 'json'],
 
             // Vehicle — required for road / multimodal
-            'vehicle_number' => [Rule::requiredIf($isRoad), 'nullable', 'string', 'max:50'],
+            'vehicle_number' => [
+                Rule::requiredIf($isRoad),
+                'nullable',
+                'string',
+                // Indian vehicle reg (5-11 chars) OR VIN/chassis (17-20 chars), uppercase alphanumeric
+                'regex:/^[A-Z0-9]{5,11}$|^[A-Z0-9]{17,20}$/',
+                'max:20',
+            ],
             'vehicle_type' => [Rule::requiredIf($isRoad), 'nullable', Rule::in(['truck', 'trailer', 'container_carrier'])],
             'is_rc_verified' => ['sometimes', 'boolean'],
             'is_verification_done' => ['sometimes', 'boolean'],
@@ -163,6 +170,7 @@ class StoreTripRequest extends FormRequest
             'seal_id.required_if' => 'A seal must be selected when using Sepio seals.',
             'shipping_bill_no.required_if' => 'Shipping bill number is required when using Sepio seals.',
             'shipping_bill_date.required_if' => 'Shipping bill date is required when using Sepio seals.',
+            'vehicle_number.regex' => 'Vehicle number must be 5–11 or 17–20 uppercase alphanumeric characters (e.g. MH01AB1234).',
         ];
     }
 }

@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\SealStatus;
 use App\Enums\TripStatus;
 use App\Enums\TripTransportationMode;
+use App\Enums\TripType;
 use App\Enums\UserStatus;
 use App\Exceptions\SepioException;
 use App\Jobs\RegisterContainerTrackingJob;
@@ -27,6 +28,7 @@ readonly class TripService
         private TripEventService $eventService,
         private SepioSealService $sepioSealService,
         private RouteService     $routeService,
+        private WalletService    $walletService,
     )
     {
     }
@@ -109,7 +111,7 @@ readonly class TripService
                 ]);
             }
 
-            // ── Auto-start: transition from Draft → InTransit immediately ────────
+            // Auto-start: transition from Draft → InTransit immediately
             $trip = $this->autoStartTrip($trip->fresh(), $createdBy);
 
             return $trip->fresh();
@@ -264,6 +266,8 @@ readonly class TripService
     public function confirmEpod(Trip $trip, array $data, User $by): Trip
     {
         return DB::transaction(function () use ($trip, $data, $by) {
+            $trip->loadMissing('customer.wallet');
+            
             $previousStatus = $trip->status->value;
 
             $trip->update([
@@ -280,8 +284,33 @@ readonly class TripService
                 $trip->seal->update(['status' => SealStatus::Used]);
             }
 
-            $this->eventService->log($trip->fresh(), 'epod_confirmed', [],
-                $previousStatus, TripStatus::Completed->value, actorId: $by->id);
+            $this->eventService->log(
+                $trip->fresh(),
+                'epod_confirmed',
+                [],
+                $previousStatus,
+                TripStatus::Completed->value,
+                actorId: $by->id
+            );
+
+            // Trip cost deduction
+            $wallet = $trip->customer->wallet;
+
+            if ($wallet) {
+                $deducted = $this->walletService->deductTripCost($wallet, $trip->fresh());
+
+                if ($deducted !== null) {
+                    $this->eventService->system($trip->fresh(), 'trip_cost_deducted', [
+                        'amount' => $deducted,
+                        'trip_type' => $trip->trip_type instanceof TripType
+                            ? $trip->trip_type->value
+                            : $trip->trip_type,
+                        'transport_mode' => $trip->transport_mode instanceof TripTransportationMode
+                            ? $trip->transport_mode->value
+                            : $trip->transport_mode,
+                    ]);
+                }
+            }
 
             return $trip->fresh();
         });

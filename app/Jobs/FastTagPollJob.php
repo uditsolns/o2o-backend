@@ -54,6 +54,15 @@ class FastTagPollJob implements ShouldQueue
 
     private function pollTrip(Trip $trip, TripTrackingService $trackingService): void
     {
+        // Skip if vehicle number doesn't match FastTag API expectations
+        if (!preg_match('/^[A-Z0-9]{5,11}$|^[A-Z0-9]{17,20}$/', $trip->vehicle_number ?? '')) {
+            Log::warning('FastTagPollJob: skipping trip with invalid vehicle number format', [
+                'trip_id' => $trip->id,
+                'vehicle_number' => $trip->vehicle_number,
+            ]);
+            return;
+        }
+
         $response = Http::timeout(15)
             ->retry(2, 500)
             ->post(self::FASTAG_API, [
