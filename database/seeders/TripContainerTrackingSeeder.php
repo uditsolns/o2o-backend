@@ -10,6 +10,21 @@ use App\Models\Trip;
 use App\Models\TripContainerTracking;
 use Illuminate\Database\Seeder;
 
+/**
+ * Seeds trip_container_tracking rows for sea/multimodal trips.
+ *
+ * The 2026_05_20 schema redesign collapsed dozens of flat columns into JSON snapshots:
+ *   - pol, pod, current_vessel   (Port of Loading / Discharge / current vessel)
+ *   - carrier, container_specs   (carrier info, container ISO/type/size)
+ *   - insights, eta_history, rollover_history, transshipment_ports
+ *   - pol_change_history, pod_change_history, raw_shipment_snapshot
+ *
+ * Plus the new (post-redesign) columns:
+ *   - transportation_status, transportation_status_updated_at, is_routing_inconclusive
+ *   - mt_shipment_id (unique), mt_vessel_ship_id
+ *   - current_vessel_imo, last_vessel_position_at
+ *   - tracking_status (enum)
+ */
 class TripContainerTrackingSeeder extends Seeder
 {
     public function run(): void
@@ -48,121 +63,127 @@ class TripContainerTrackingSeeder extends Seeder
     {
         $tid = $trip->id;
         $cid = $trip->customer_id;
+        $ts = fn(string $hours) => now()->subHours((int) $hours);
+
+        // Common shared JSON for the pol/pod snapshots
+        $polSnapshot = fn() => [
+            'unlocode' => $this->toUnlocode($trip->origin_port_code),
+            'name' => $trip->origin_port_name,
+            'lat' => $this->portLat($trip->origin_port_code),
+            'lng' => $this->portLng($trip->origin_port_code),
+            'country' => $this->portCountry($trip->origin_port_code),
+            'etd' => optional($trip->etd)->toIso8601String(),
+        ];
+
+        $podSnapshot = fn() => [
+            'unlocode' => $this->toUnlocode($trip->destination_port_code),
+            'name' => $trip->destination_port_name,
+            'lat' => $this->portLat($trip->destination_port_code),
+            'lng' => $this->portLng($trip->destination_port_code),
+            'country' => $this->portCountry($trip->destination_port_code),
+            'eta' => optional($trip->eta)->toIso8601String(),
+        ];
+
+        $carrier = [
+            'scac' => $trip->carrier_scac ?? 'MSCU',
+            'name' => $this->carrierName($trip->carrier_scac),
+        ];
+
+        $containerSpecs = [
+            'iso_code' => $trip->container_type === '40HC' ? '45G1' : ($trip->container_type === '40GP' ? '42G1' : '22G1'),
+            'type' => $trip->container_type === '40HC' ? 'high_cube' : 'standard',
+            'size' => str_starts_with($trip->container_type, '40') ? 40 : 20,
+        ];
 
         return match ($trip->status) {
 
-            TripStatus::InTransit => [
+            // ── Draft-like "pre-departure" active trips ────────────────────
+            TripStatus::Active => [
                 'mt_tracking_request_id' => 'KPLR-REQ-' . $cid . '-' . $tid,
                 'mt_shipment_id' => null,
                 'tracking_status' => 'pending',
                 'transportation_status' => 'in_transit',
-                'pol_name' => $trip->origin_port_name,
-                'pol_unlocode' => $this->toUnlocode($trip->origin_port_code),
-                'pod_name' => $trip->destination_port_name,
-                'pod_unlocode' => $this->toUnlocode($trip->destination_port_code),
-                'last_synced_at' => now()->subHours(2),
+                'transportation_status_updated_at' => $ts('2'),
+                'is_routing_inconclusive' => false,
+                'pol' => $polSnapshot(),
+                'pod' => $podSnapshot(),
+                'carrier' => $carrier,
+                'container_specs' => $containerSpecs,
+                'insights' => null,
+                'last_synced_at' => $ts('2'),
             ],
 
-            TripStatus::AtPort => [
+            TripStatus::OutForDelivery => [
                 'mt_tracking_request_id' => 'KPLR-REQ-' . $cid . '-' . $tid,
                 'mt_shipment_id' => 'SHP-' . strtoupper(substr($trip->trip_ref, -4)) . '-' . $tid,
-                'tracking_status' => 'active',
-                'transportation_status' => 'at_port_of_loading',
-                'pol_name' => $trip->origin_port_name,
-                'pol_unlocode' => $this->toUnlocode($trip->origin_port_code),
-                'pod_name' => $trip->destination_port_name,
-                'pod_unlocode' => $this->toUnlocode($trip->destination_port_code),
-                'arrival_delay_days' => 0,
-                'initial_carrier_eta' => $trip->eta ?? now()->addDays(22),
-                'has_rollover' => false,
-                'current_vessel_name' => null,
-                'last_synced_at' => now()->subMinutes(30),
-            ],
-
-            TripStatus::OnVessel => [
-                'mt_tracking_request_id' => 'KPLR-REQ-' . $cid . '-' . $tid,
-                'mt_shipment_id' => 'SHP-' . strtoupper(substr($trip->trip_ref, -4)) . '-' . $tid,
+                'mt_vessel_ship_id' => $this->mtVesselShipId($trip),
                 'tracking_status' => 'active',
                 'transportation_status' => 'in_transit',
-                'pol_name' => $trip->origin_port_name,
-                'pol_unlocode' => $this->toUnlocode($trip->origin_port_code),
-                'pod_name' => $trip->destination_port_name,
-                'pod_unlocode' => $this->toUnlocode($trip->destination_port_code),
-                'arrival_delay_days' => 0,
-                'initial_carrier_eta' => $trip->eta ?? now()->addDays(14),
-                'has_rollover' => false,
-                'current_vessel_name' => $trip->vessel_name,
-                'current_vessel_imo' => $trip->vessel_imo_number,
-                'current_vessel_lat' => $trip->last_known_lat,
-                'current_vessel_lng' => $trip->last_known_lng,
-                'current_vessel_speed' => round(rand(145, 215) / 10, 1),
-                'current_vessel_heading' => rand(250, 360),
-                'current_vessel_geo_area' => $this->geoArea($trip->trip_ref),
-                'current_vessel_position_at' => now()->subHours(1),
-                'last_synced_at' => now()->subHours(1),
+                'transportation_status_updated_at' => $ts('4'),
+                'is_routing_inconclusive' => false,
+                'pol' => $polSnapshot(),
+                'pod' => $podSnapshot(),
+                'carrier' => $carrier,
+                'container_specs' => $containerSpecs,
+                'insights' => [
+                    'arrival_delay_days' => 0,
+                    'initial_carrier_eta' => optional($trip->eta)->toIso8601String(),
+                    'has_rollover' => false,
+                ],
+                'eta_history' => [
+                    ['eta' => optional($trip->eta)->toIso8601String(), 'recorded_at' => $ts('72')],
+                ],
+                'current_vessel_imo' => null,
+                'last_vessel_position_at' => null,
+                'last_synced_at' => $ts('1'),
             ],
 
-            TripStatus::InTransshipment => [
+            TripStatus::Delivered => [
                 'mt_tracking_request_id' => 'KPLR-REQ-' . $cid . '-' . $tid,
                 'mt_shipment_id' => 'SHP-' . strtoupper(substr($trip->trip_ref, -4)) . '-' . $tid,
-                'tracking_status' => 'active',
-                'transportation_status' => 'transshipment',
-                'pol_name' => $trip->origin_port_name,
-                'pol_unlocode' => $this->toUnlocode($trip->origin_port_code),
-                'pod_name' => $trip->destination_port_name,
-                'pod_unlocode' => $this->toUnlocode($trip->destination_port_code),
-                'arrival_delay_days' => 2,
-                'initial_carrier_eta' => $trip->eta ?? now()->addDays(8),
-                'has_rollover' => false,
-                'current_vessel_name' => $trip->vessel_name,
-                'current_vessel_imo' => $trip->vessel_imo_number,
-                'current_vessel_lat' => 6.9271,   // Colombo
-                'current_vessel_lng' => 79.8612,
-                'current_vessel_speed' => 0.5,
-                'current_vessel_heading' => 0,
-                'current_vessel_geo_area' => 'Colombo Transshipment Port',
-                'current_vessel_position_at' => now()->subHours(3),
-                'last_synced_at' => now()->subHours(3),
-            ],
-
-            TripStatus::VesselArrived => [
-                'mt_tracking_request_id' => 'KPLR-REQ-' . $cid . '-' . $tid,
-                'mt_shipment_id' => 'SHP-' . strtoupper(substr($trip->trip_ref, -4)) . '-' . $tid,
+                'mt_vessel_ship_id' => $this->mtVesselShipId($trip),
                 'tracking_status' => 'active',
                 'transportation_status' => 'arrived',
-                'pol_name' => $trip->origin_port_name,
-                'pol_unlocode' => $this->toUnlocode($trip->origin_port_code),
-                'pod_name' => $trip->destination_port_name,
-                'pod_unlocode' => $this->toUnlocode($trip->destination_port_code),
-                'arrival_delay_days' => rand(0, 3),
-                'initial_carrier_eta' => $trip->eta ?? now()->subDays(2),
-                'has_rollover' => false,
-                'current_vessel_name' => $trip->vessel_name,
-                'current_vessel_imo' => $trip->vessel_imo_number,
-                'current_vessel_lat' => $trip->delivery_lat ?? $trip->last_known_lat,
-                'current_vessel_lng' => $trip->delivery_lng ?? $trip->last_known_lng,
-                'current_vessel_speed' => 0.0,
-                'current_vessel_heading' => 0,
-                'current_vessel_geo_area' => 'Destination Port — Berth',
-                'current_vessel_position_at' => now()->subHours(6),
-                'last_synced_at' => now()->subHours(4),
+                'transportation_status_updated_at' => $ts('6'),
+                'is_routing_inconclusive' => false,
+                'pol' => $polSnapshot(),
+                'pod' => $podSnapshot(),
+                'carrier' => $carrier,
+                'container_specs' => $containerSpecs,
+                'insights' => [
+                    'arrival_delay_days' => 1,
+                    'initial_carrier_eta' => optional($trip->eta)->toIso8601String(),
+                    'has_rollover' => false,
+                ],
+                'eta_history' => [
+                    ['eta' => optional($trip->eta)->toIso8601String(), 'recorded_at' => $ts('72')],
+                ],
+                'current_vessel_imo' => null,
+                'last_vessel_position_at' => null,
+                'last_synced_at' => $ts('6'),
             ],
 
-            TripStatus::Delivered, TripStatus::Completed => [
+            TripStatus::Completed => [
                 'mt_tracking_request_id' => 'KPLR-REQ-' . $cid . '-' . $tid,
                 'mt_shipment_id' => 'SHP-' . strtoupper(substr($trip->trip_ref, -4)) . '-' . $tid,
+                'mt_vessel_ship_id' => $this->mtVesselShipId($trip),
                 'tracking_status' => 'active',
                 'transportation_status' => 'delivered',
-                'pol_name' => $trip->origin_port_name,
-                'pol_unlocode' => $this->toUnlocode($trip->origin_port_code),
-                'pod_name' => $trip->destination_port_name,
-                'pod_unlocode' => $this->toUnlocode($trip->destination_port_code),
-                'arrival_delay_days' => 1,
-                'initial_carrier_eta' => $trip->eta ?? now()->subDays(20),
-                'has_rollover' => false,
-                'current_vessel_name' => $trip->vessel_name,
-                'current_vessel_imo' => $trip->vessel_imo_number,
-                'last_synced_at' => now()->subDays(2),
+                'transportation_status_updated_at' => $ts('48'),
+                'is_routing_inconclusive' => false,
+                'pol' => $polSnapshot(),
+                'pod' => $podSnapshot(),
+                'carrier' => $carrier,
+                'container_specs' => $containerSpecs,
+                'insights' => [
+                    'arrival_delay_days' => 0,
+                    'initial_carrier_eta' => optional($trip->eta)->toIso8601String(),
+                    'has_rollover' => false,
+                ],
+                'eta_history' => [
+                    ['eta' => optional($trip->eta)->toIso8601String(), 'recorded_at' => $ts('240')],
+                ],
+                'last_synced_at' => $ts('48'),
             ],
 
             default => [
@@ -171,32 +192,69 @@ class TripContainerTrackingSeeder extends Seeder
         };
     }
 
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
     private function toUnlocode(?string $code): ?string
     {
         if (!$code) return null;
+        return strtoupper($code);
+    }
 
+    private function portLat(?string $code): ?float
+    {
         return match ($code) {
-            'INNSA' => 'INNSA',
-            'INMUN' => 'INMUN',
-            'INMAA' => 'INMAA',
-            'INVTZ' => 'INVTZ',
-            'INCOK' => 'INCOK',
-            'AEJEA' => 'AEJEA',
-            'NLRTM' => 'NLRTM',
-            'SGSIN' => 'SGSIN',
-            'CNSHA' => 'CNSHA',
-            'DEHAM' => 'DEHAM',
-            default => strtoupper($code),
+            'INNSA' => 18.9488, 'INMUN' => 22.8381, 'INMAA' => 13.0836,
+            'INVTZ' => 17.6868, 'INCOK' => 9.9312, 'INTDL' => 28.5011,
+            'AEJEA' => 24.9857, 'NLRTM' => 51.9244, 'SGSIN' => 1.2566,
+            'CNSHA' => 30.6218, 'DEHAM' => 53.5439, default => null,
         };
     }
 
-    private function geoArea(string $tripRef): string
+    private function portLng(?string $code): ?float
+    {
+        return match ($code) {
+            'INNSA' => 72.9511, 'INMUN' => 69.7032, 'INMAA' => 80.2969,
+            'INVTZ' => 83.2185, 'INCOK' => 76.2673, 'INTDL' => 77.2877,
+            'AEJEA' => 55.0272, 'NLRTM' => 4.4777, 'SGSIN' => 103.8198,
+            'CNSHA' => 122.0580, 'DEHAM' => 9.9569, default => null,
+        };
+    }
+
+    private function portCountry(?string $code): ?string
     {
         return match (true) {
-            str_contains($tripRef, 'T05') => 'Red Sea (off Jeddah)',
-            str_contains($tripRef, 'T06') => 'Colombo Transshipment',
-            str_contains($tripRef, 'T02') => 'Bay of Bengal',
-            default => 'Arabian Sea',
+            $code && str_starts_with($code, 'IN') => 'India',
+            $code && str_starts_with($code, 'AE') => 'UAE',
+            $code && str_starts_with($code, 'NL') => 'Netherlands',
+            $code && str_starts_with($code, 'SG') => 'Singapore',
+            $code && str_starts_with($code, 'CN') => 'China',
+            $code && str_starts_with($code, 'DE') => 'Germany',
+            default => null,
         };
+    }
+
+    private function carrierName(?string $scac): ?string
+    {
+        return match ($scac) {
+            'MSCU' => 'Mediterranean Shipping Company',
+            'HLCU' => 'Hapag-Lloyd',
+            'CMDU' => 'CMA CGM',
+            'COSU' => 'COSCO Shipping',
+            'OOLU' => 'OOCL',
+            'EGLV' => 'Evergreen Line',
+            'CSCL' => 'China Shipping',
+            'APLU' => 'APL',
+            default => null,
+        };
+    }
+
+    /**
+     * Generate a synthetic MarineTraffic vessel ship ID from the trip_ref.
+     * In production this comes from the Kpler/MarineTraffic shipment record.
+     */
+    private function mtVesselShipId(Trip $trip): string
+    {
+        $hash = substr(md5($trip->trip_ref . $trip->carrier_scac), 0, 10);
+        return 'MTSHIP-' . strtoupper($hash);
     }
 }

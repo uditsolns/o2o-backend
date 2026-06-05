@@ -16,7 +16,10 @@ use Illuminate\Database\Seeder;
  * Two costing types to exercise both paths:
  *   - Customer 1 (Rao Global)    → Cash, with advance balance pre-loaded
  *   - Customer 2 (Verma Logistics) → Credit with capping
- *   - Customer 3 (Iyer Impex)   → Cash, no balance (edge case)
+ *   - Customer 3 (Iyer Impex)    → Cash, no balance (edge case)
+ *
+ * Note: IL insurance fields (il_policy_number, il_policy_expiry, sum_insured, gwp)
+ * moved from customer_wallets to customers in migration 2026_05_28_104324.
  */
 class CustomerWalletSeeder extends Seeder
 {
@@ -47,16 +50,13 @@ class CustomerWalletSeeder extends Seeder
 
             $wallet = CustomerWallet::create([
                 'customer_id' => $customer->id,
-                'il_policy_number' => 'ILPOL-' . str_pad($customer->id, 5, '0', STR_PAD_LEFT),
-                'il_policy_expiry' => now()->addYear(),
-                'sum_insured' => $def['sum_insured'],
-                'gwp' => $def['gwp'],
                 'costing_type' => $def['costing_type'],
                 'credit_period' => $def['credit_period'] ?? null,
                 'credit_capping' => $def['credit_capping'] ?? null,
                 'credit_used' => $def['credit_used'] ?? 0,
                 'freight_rate_per_seal' => $def['freight_rate_per_seal'],
                 'cost_balance' => $def['cost_balance'],
+                'low_balance_threshold' => $def['low_balance_threshold'] ?? null,
                 'created_by_id' => $admin->id,
             ]);
 
@@ -95,10 +95,9 @@ class CustomerWalletSeeder extends Seeder
             // Cash wallet with healthy balance
             [
                 'costing_type' => WalletCoastingType::Cash,
-                'sum_insured' => 50_00_000.00,
-                'gwp' => 15_000.00,
                 'freight_rate_per_seal' => 12.50,
                 'cost_balance' => 2_50_000.00,
+                'low_balance_threshold' => 25_000.00,
                 'credit_period' => null,
                 'credit_capping' => null,
                 'credit_used' => 0,
@@ -111,10 +110,9 @@ class CustomerWalletSeeder extends Seeder
             // Credit wallet
             [
                 'costing_type' => WalletCoastingType::Credit,
-                'sum_insured' => 75_00_000.00,
-                'gwp' => 20_000.00,
                 'freight_rate_per_seal' => 10.00,
                 'cost_balance' => 0,
+                'low_balance_threshold' => null,
                 'credit_period' => 30,
                 'credit_capping' => 5_00_000.00,
                 'credit_used' => 45_000.00,
@@ -126,10 +124,9 @@ class CustomerWalletSeeder extends Seeder
             // Cash wallet — zero balance (edge case for payment tests)
             [
                 'costing_type' => WalletCoastingType::Cash,
-                'sum_insured' => 30_00_000.00,
-                'gwp' => 8_000.00,
                 'freight_rate_per_seal' => 15.00,
                 'cost_balance' => 0,
+                'low_balance_threshold' => 20_000.00,
                 'credit_period' => null,
                 'credit_capping' => null,
                 'credit_used' => 0,

@@ -8,7 +8,6 @@ use App\Enums\TripTransportationMode;
 use App\Enums\TripType;
 use App\Enums\UserStatus;
 use App\Models\Customer;
-use App\Models\CustomerLocation;
 use App\Models\Role;
 use App\Models\Seal;
 use App\Models\Trip;
@@ -18,6 +17,20 @@ use App\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Str;
 
+/**
+ * Seeds Trips for the Completed customers.
+ *
+ * TripStatus enum (current):
+ *   draft → active → out_for_delivery → delivered → completed
+ *
+ * Vessel fields (vessel_name / vessel_imo_number / voyage_number / mt_vessel_ship_id /
+ * last_vessel_tracked_at / last_vessel_position_at) have been REMOVED from the trips
+ * table — vessel data now lives in trip_container_tracking as JSON.
+ *
+ * New fields in use:
+ *   - uses_sepio_seal (bool)
+ *   - shipping_bill_no, shipping_bill_date  (export-specific)
+ */
 class TripSeeder extends Seeder
 {
     public function run(): void
@@ -82,11 +95,11 @@ class TripSeeder extends Seeder
     private function upsertDriverUser(int $customerId, Trip $trip): ?int
     {
         // Only road or multimodal trips need a driver user
-        $mode = $trip->transport_mode instanceof \App\Enums\TripTransportationMode
+        $mode = $trip->transport_mode instanceof TripTransportationMode
             ? $trip->transport_mode->value
             : $trip->transport_mode;
 
-        if (!in_array($mode, ['road', 'multimodal'], true)) {
+        if (!in_array($mode, [TripTransportationMode::Road->value, TripTransportationMode::Multimodal->value], true)) {
             return null;
         }
 
@@ -147,13 +160,13 @@ class TripSeeder extends Seeder
             // ─────────────────────────────────────────────────────────────────
             // VL-T01 | COMPLETED EXPORT MULTIMODAL
             // Delhi (Mayapuri) → truck → JNPT → vessel → Jebel Ali, UAE
-            // Full journey: road leg + sea leg + delivery at Jebel Ali
             // ─────────────────────────────────────────────────────────────────
             [
                 'trip_ref' => 'TR_VL_T01',
                 'status' => TripStatus::Completed,
                 'trip_type' => TripType::Export,
                 'transport_mode' => TripTransportationMode::Multimodal,
+                'uses_sepio_seal' => true,
                 // Driver / Vehicle
                 'driver_name' => 'Rajesh Singh',
                 'driver_phone' => '9871122334',
@@ -182,6 +195,8 @@ class TripSeeder extends Seeder
                 'invoice_date' => now()->subDays(47)->toDateString(),
                 'eway_bill_number' => '2312456789123456',
                 'eway_bill_validity_date' => now()->subDays(30)->toDateString(),
+                'shipping_bill_no' => 'SBL2541897',
+                'shipping_bill_date' => now()->subDays(40)->toDateString(),
                 // Dispatch
                 'dispatch_location_name' => 'Verma Logistics — Mayapuri HO',
                 'dispatch_address' => 'Plot 14, Phase II, Mayapuri Industrial Area',
@@ -214,10 +229,7 @@ class TripSeeder extends Seeder
                 'destination_port_name' => 'Jebel Ali Port',
                 'destination_port_code' => 'AEJEA',
                 'destination_port_category' => 'port',
-                // Vessel
-                'vessel_name' => 'MSC MAGNIFICA',
-                'vessel_imo_number' => 'IMO9387073',
-                'voyage_number' => 'IE421A',
+                // Vessel info now lives in trip_container_tracking (we capture BL/eta/etd here)
                 'bill_of_lading' => 'MSCUMN1234567',
                 'eta' => now()->subDays(26),
                 'etd' => now()->subDays(38),
@@ -245,6 +257,7 @@ class TripSeeder extends Seeder
                 'status' => TripStatus::Completed,
                 'trip_type' => TripType::Import,
                 'transport_mode' => TripTransportationMode::Multimodal,
+                'uses_sepio_seal' => true,
                 'driver_name' => 'Manoj Yadav',
                 'driver_phone' => '9899001122',
                 'driver_license' => 'UP0220200098765',
@@ -300,10 +313,6 @@ class TripSeeder extends Seeder
                 'destination_port_name' => 'Jawaharlal Nehru Port (JNPT)',
                 'destination_port_code' => 'INNSA',
                 'destination_port_category' => 'port',
-                // Vessel
-                'vessel_name' => 'MSC GÜLSÜN',
-                'vessel_imo_number' => 'IMO9811000',
-                'voyage_number' => 'AE421W',
                 'bill_of_lading' => 'MSCUMUM7654321',
                 'eta' => now()->subDays(33),
                 'etd' => now()->subDays(48),
@@ -321,14 +330,14 @@ class TripSeeder extends Seeder
             ],
 
             // ─────────────────────────────────────────────────────────────────
-            // VL-T03 | ACTIVE — IN_TRANSIT (road leg: Delhi → JNPT)
-            // Truck currently on NH-48 heading to JNPT
+            // VL-T03 | ACTIVE — Truck on NH-48 heading to JNPT
             // ─────────────────────────────────────────────────────────────────
             [
                 'trip_ref' => 'TR_VL_T03',
-                'status' => TripStatus::InTransit,
+                'status' => TripStatus::Active,
                 'trip_type' => TripType::Export,
                 'transport_mode' => TripTransportationMode::Multimodal,
+                'uses_sepio_seal' => true,
                 'driver_name' => 'Suresh Patel',
                 'driver_phone' => '9811234567',
                 'driver_license' => 'GJ0620200078901',
@@ -351,6 +360,8 @@ class TripSeeder extends Seeder
                 'invoice_date' => now()->subDays(4)->toDateString(),
                 'eway_bill_number' => '2312900123456789',
                 'eway_bill_validity_date' => now()->addDays(10)->toDateString(),
+                'shipping_bill_no' => 'SBL2987311',
+                'shipping_bill_date' => now()->subDays(2)->toDateString(),
                 'dispatch_location_name' => 'Verma Logistics — Mayapuri HO',
                 'dispatch_address' => 'Plot 14, Phase II, Mayapuri Industrial Area',
                 'dispatch_city' => 'New Delhi',
@@ -388,13 +399,14 @@ class TripSeeder extends Seeder
             ],
 
             // ─────────────────────────────────────────────────────────────────
-            // VL-T04 | ACTIVE — AT_PORT (container at JNPT, awaiting loading)
+            // VL-T04 | ACTIVE — Container at JNPT, ready to load
             // ─────────────────────────────────────────────────────────────────
             [
                 'trip_ref' => 'TR_VL_T04',
-                'status' => TripStatus::AtPort,
+                'status' => TripStatus::Active,
                 'trip_type' => TripType::Export,
                 'transport_mode' => TripTransportationMode::Multimodal,
+                'uses_sepio_seal' => true,
                 'driver_name' => 'Brijesh Kumar',
                 'driver_phone' => '9819988776',
                 'vehicle_number' => 'MH04CQ2234',
@@ -416,6 +428,8 @@ class TripSeeder extends Seeder
                 'invoice_date' => now()->subDays(10)->toDateString(),
                 'eway_bill_number' => '2312567891234001',
                 'eway_bill_validity_date' => now()->addDays(5)->toDateString(),
+                'shipping_bill_no' => 'SBL3014588',
+                'shipping_bill_date' => now()->subDays(7)->toDateString(),
                 'dispatch_location_name' => 'Verma Logistics — NSEZ Noida Warehouse',
                 'dispatch_address' => 'Unit B-12, Noida Special Economic Zone',
                 'dispatch_city' => 'Noida',
@@ -450,13 +464,14 @@ class TripSeeder extends Seeder
             ],
 
             // ─────────────────────────────────────────────────────────────────
-            // VL-T05 | ACTIVE — ON_VESSEL (JNPT → Rotterdam, currently Red Sea)
+            // VL-T05 | ACTIVE — Sea leg from JNPT to Rotterdam, in progress
             // ─────────────────────────────────────────────────────────────────
             [
                 'trip_ref' => 'TR_VL_T05',
-                'status' => TripStatus::OnVessel,
+                'status' => TripStatus::Active,
                 'trip_type' => TripType::Export,
                 'transport_mode' => TripTransportationMode::Sea,
+                'uses_sepio_seal' => true,
                 'container_number' => 'MSCU9023456',
                 'container_type' => '40HC',
                 'carrier_scac' => 'MSCU',
@@ -471,6 +486,8 @@ class TripSeeder extends Seeder
                 'declared_cargo_value' => 2100000.00,
                 'invoice_number' => 'VL-EXP-2024-0555',
                 'invoice_date' => now()->subDays(18)->toDateString(),
+                'shipping_bill_no' => 'SBL2670911',
+                'shipping_bill_date' => now()->subDays(14)->toDateString(),
                 'dispatch_location_name' => 'Jawaharlal Nehru Port (JNPT)',
                 'dispatch_address' => 'JNPT, Sheva, Navi Mumbai',
                 'dispatch_city' => 'Navi Mumbai',
@@ -491,34 +508,29 @@ class TripSeeder extends Seeder
                 'destination_port_name' => 'Port of Rotterdam',
                 'destination_port_code' => 'NLRTM',
                 'destination_port_category' => 'port',
-                'vessel_name' => 'CMA CGM BOUGAINVILLE',
-                'vessel_imo_number' => 'IMO9694685',
-                'voyage_number' => 'FAL1-234W',
                 'bill_of_lading' => 'CMAMUM0034567',
                 'eta' => now()->addDays(14),
                 'etd' => now()->subDays(13),
                 'trip_start_time' => now()->subDays(15),
                 'expected_delivery_date' => now()->addDays(18)->toDateString(),
-                // Current vessel position: Red Sea (18.0°N, 40.5°E)
                 'last_known_lat' => 18.0000,
                 'last_known_lng' => 40.5000,
                 'last_known_source' => 'vessel_ais',
                 'last_tracked_at' => now()->subHours(1),
-                'last_vessel_tracked_at' => now()->subHours(1),
                 'epod_status' => 'pending',
                 'needs_seal' => true,
                 'seal_final_status' => SealStatus::InTransit,
             ],
 
             // ─────────────────────────────────────────────────────────────────
-            // VL-T06 | ACTIVE — IN_TRANSSHIPMENT
-            // JNPT → Colombo (transshipment) → Singapore
+            // VL-T06 | ACTIVE — Sea leg via Colombo
             // ─────────────────────────────────────────────────────────────────
             [
                 'trip_ref' => 'TR_VL_T06',
-                'status' => TripStatus::InTransshipment,
+                'status' => TripStatus::Active,
                 'trip_type' => TripType::Export,
                 'transport_mode' => TripTransportationMode::Sea,
+                'uses_sepio_seal' => true,
                 'container_number' => 'COSU6723001',
                 'container_type' => '20GP',
                 'carrier_scac' => 'COSU',
@@ -533,6 +545,8 @@ class TripSeeder extends Seeder
                 'declared_cargo_value' => 900000.00,
                 'invoice_number' => 'VL-EXP-2024-0522',
                 'invoice_date' => now()->subDays(25)->toDateString(),
+                'shipping_bill_no' => 'SBL2447710',
+                'shipping_bill_date' => now()->subDays(21)->toDateString(),
                 'dispatch_location_name' => 'Jawaharlal Nehru Port (JNPT)',
                 'dispatch_city' => 'Navi Mumbai',
                 'dispatch_state' => 'Maharashtra',
@@ -551,15 +565,11 @@ class TripSeeder extends Seeder
                 'destination_port_name' => 'Port of Singapore (PSA)',
                 'destination_port_code' => 'SGSIN',
                 'destination_port_category' => 'port',
-                'vessel_name' => 'CMA CGM ANTOINE DE SAINT EXUPERY',
-                'vessel_imo_number' => 'IMO9776171',
-                'voyage_number' => 'AE6-567W',
                 'bill_of_lading' => 'COSU123456SGP',
                 'eta' => now()->addDays(8),
                 'etd' => now()->subDays(20),
                 'trip_start_time' => now()->subDays(22),
                 'expected_delivery_date' => now()->addDays(12)->toDateString(),
-                // Currently at Colombo port transshipment
                 'last_known_lat' => 6.9271,
                 'last_known_lng' => 79.8612,
                 'last_known_source' => 'vessel_ais',
@@ -570,14 +580,14 @@ class TripSeeder extends Seeder
             ],
 
             // ─────────────────────────────────────────────────────────────────
-            // VL-T07 | ACTIVE — VESSEL_ARRIVED
-            // Jebel Ali → Mundra, vessel arrived 2 days ago, customs in progress
+            // VL-T07 | ACTIVE — vessel at Mundra, customs in progress
             // ─────────────────────────────────────────────────────────────────
             [
                 'trip_ref' => 'TR_VL_T07',
-                'status' => TripStatus::VesselArrived,
+                'status' => TripStatus::Active,
                 'trip_type' => TripType::Import,
                 'transport_mode' => TripTransportationMode::Multimodal,
+                'uses_sepio_seal' => true,
                 'container_number' => 'MSCU4401122',
                 'container_type' => '40GP',
                 'carrier_scac' => 'MSCU',
@@ -610,9 +620,6 @@ class TripSeeder extends Seeder
                 'destination_port_name' => 'Mundra Port (APSEZ)',
                 'destination_port_code' => 'INMUN',
                 'destination_port_category' => 'port',
-                'vessel_name' => 'MSC ANNA',
-                'vessel_imo_number' => 'IMO9484702',
-                'voyage_number' => 'AE8-112E',
                 'bill_of_lading' => 'MSCMUN4400112',
                 'eta' => now()->subDays(2),
                 'etd' => now()->subDays(18),
@@ -628,14 +635,14 @@ class TripSeeder extends Seeder
             ],
 
             // ─────────────────────────────────────────────────────────────────
-            // VL-T08 | ACTIVE — OUT_FOR_DELIVERY
-            // From JNPT (road leg) → Noida warehouse
+            // VL-T08 | OUT_FOR_DELIVERY — Road leg, currently near Agra
             // ─────────────────────────────────────────────────────────────────
             [
                 'trip_ref' => 'TR_VL_T08',
                 'status' => TripStatus::OutForDelivery,
                 'trip_type' => TripType::Import,
                 'transport_mode' => TripTransportationMode::Road,
+                'uses_sepio_seal' => true,
                 'driver_name' => 'Dinesh Chauhan',
                 'driver_phone' => '9812002244',
                 'vehicle_number' => 'MH04DN4411',
@@ -683,7 +690,6 @@ class TripSeeder extends Seeder
                 'destination_port_category' => 'icd',
                 'trip_start_time' => now()->subDays(4),
                 'expected_delivery_date' => now()->addDays(1)->toDateString(),
-                // Currently near Agra on NH-19/NH-44
                 'last_known_lat' => 27.1767,
                 'last_known_lng' => 78.0081,
                 'last_known_source' => 'driver_mobile',
@@ -694,14 +700,14 @@ class TripSeeder extends Seeder
             ],
 
             // ─────────────────────────────────────────────────────────────────
-            // VL-T09 | ACTIVE — DELIVERED (awaiting ePOD)
-            // Singapore → JNPT sea, then JNPT → Delhi road, goods delivered
+            // VL-T09 | DELIVERED — Goods delivered, ePOD pending
             // ─────────────────────────────────────────────────────────────────
             [
                 'trip_ref' => 'TR_VL_T09',
                 'status' => TripStatus::Delivered,
                 'trip_type' => TripType::Import,
                 'transport_mode' => TripTransportationMode::Multimodal,
+                'uses_sepio_seal' => true,
                 'driver_name' => 'Ramchandran Pillai',
                 'driver_phone' => '9811099870',
                 'vehicle_number' => 'UP16CZ1234',
@@ -745,9 +751,6 @@ class TripSeeder extends Seeder
                 'destination_port_name' => 'Jawaharlal Nehru Port (JNPT)',
                 'destination_port_code' => 'INNSA',
                 'destination_port_category' => 'port',
-                'vessel_name' => 'EVER GIVEN',
-                'vessel_imo_number' => 'IMO9811000',
-                'voyage_number' => 'AE5-089E',
                 'bill_of_lading' => 'HLCUMUM0012345',
                 'eta' => now()->subDays(8),
                 'etd' => now()->subDays(15),
@@ -765,13 +768,13 @@ class TripSeeder extends Seeder
 
             // ─────────────────────────────────────────────────────────────────
             // VL-T10 | COMPLETED DOMESTIC ROAD
-            // Delhi (Mayapuri) → Mumbai (Bhiwandi) via NH-48
             // ─────────────────────────────────────────────────────────────────
             [
                 'trip_ref' => 'TR_VL_T10',
                 'status' => TripStatus::Completed,
                 'trip_type' => TripType::Domestic,
                 'transport_mode' => TripTransportationMode::Road,
+                'uses_sepio_seal' => false,
                 'driver_name' => 'Harpreet Singh',
                 'driver_phone' => '9810345678',
                 'driver_license' => 'DL0120180067890',
@@ -834,6 +837,7 @@ class TripSeeder extends Seeder
                 'status' => TripStatus::Draft,
                 'trip_type' => TripType::Export,
                 'transport_mode' => TripTransportationMode::Multimodal,
+                'uses_sepio_seal' => false,
                 'container_number' => 'CMAU9900001',
                 'container_type' => '40HC',
                 'carrier_scac' => 'CMDU',
@@ -888,6 +892,7 @@ class TripSeeder extends Seeder
                 'status' => TripStatus::Completed,
                 'trip_type' => TripType::Export,
                 'transport_mode' => TripTransportationMode::Sea,
+                'uses_sepio_seal' => true,
                 'container_number' => 'MSCU3301245',
                 'container_type' => '40HC',
                 'carrier_scac' => 'MSCU',
@@ -902,6 +907,8 @@ class TripSeeder extends Seeder
                 'declared_cargo_value' => 2800000.00,
                 'invoice_number' => 'II-EXP-2024-0290',
                 'invoice_date' => now()->subDays(62)->toDateString(),
+                'shipping_bill_no' => 'SBL2115604',
+                'shipping_bill_date' => now()->subDays(58)->toDateString(),
                 'dispatch_location_name' => 'Chennai Port (Kamarajar Port)',
                 'dispatch_address' => 'Rajaji Salai, George Town',
                 'dispatch_city' => 'Chennai',
@@ -925,9 +932,6 @@ class TripSeeder extends Seeder
                 'destination_port_name' => 'Port of Hamburg',
                 'destination_port_code' => 'DEHAM',
                 'destination_port_category' => 'port',
-                'vessel_name' => 'MSC OSCAR',
-                'vessel_imo_number' => 'IMO9703291',
-                'voyage_number' => 'AE3-789W',
                 'bill_of_lading' => 'MSCCHN7890123',
                 'eta' => now()->subDays(28),
                 'etd' => now()->subDays(58),
@@ -943,14 +947,14 @@ class TripSeeder extends Seeder
             ],
 
             // ─────────────────────────────────────────────────────────────────
-            // II-T02 | ACTIVE — ON_VESSEL (Shanghai → Chennai)
-            // Currently in Bay of Bengal, 3 days from Chennai
+            // II-T02 | ACTIVE — Sea leg, currently Bay of Bengal
             // ─────────────────────────────────────────────────────────────────
             [
                 'trip_ref' => 'TR_II_T02',
-                'status' => TripStatus::OnVessel,
+                'status' => TripStatus::Active,
                 'trip_type' => TripType::Import,
                 'transport_mode' => TripTransportationMode::Multimodal,
+                'uses_sepio_seal' => true,
                 'container_number' => 'CSCL9823011',
                 'container_type' => '40GP',
                 'carrier_scac' => 'CSCL',
@@ -986,34 +990,29 @@ class TripSeeder extends Seeder
                 'destination_port_name' => 'Chennai Port (Kamarajar Port)',
                 'destination_port_code' => 'INMAA',
                 'destination_port_category' => 'port',
-                'vessel_name' => 'CSCL GLOBE',
-                'vessel_imo_number' => 'IMO9695154',
-                'voyage_number' => 'AE9-021E',
                 'bill_of_lading' => 'CSCLCHN9823011',
                 'eta' => now()->addDays(3),
                 'etd' => now()->subDays(18),
                 'trip_start_time' => now()->subDays(20),
                 'expected_delivery_date' => now()->addDays(8)->toDateString(),
-                // Currently Bay of Bengal (12.5°N, 84.0°E)
                 'last_known_lat' => 12.5000,
                 'last_known_lng' => 84.0000,
                 'last_known_source' => 'vessel_ais',
                 'last_tracked_at' => now()->subHours(2),
-                'last_vessel_tracked_at' => now()->subHours(2),
                 'epod_status' => 'pending',
                 'needs_seal' => true,
                 'seal_final_status' => SealStatus::InTransit,
             ],
 
             // ─────────────────────────────────────────────────────────────────
-            // II-T03 | ACTIVE — IN_TRANSIT (road: Chennai Factory → Chennai Port)
-            // Short road leg (~20km) heading to port for export stuffing
+            // II-T03 | ACTIVE — Road leg, Chennai factory → Chennai port
             // ─────────────────────────────────────────────────────────────────
             [
                 'trip_ref' => 'TR_II_T03',
-                'status' => TripStatus::InTransit,
+                'status' => TripStatus::Active,
                 'trip_type' => TripType::Export,
                 'transport_mode' => TripTransportationMode::Multimodal,
+                'uses_sepio_seal' => true,
                 'driver_name' => 'Murugan Selvan',
                 'driver_phone' => '9840123456',
                 'driver_license' => 'TN0420190045678',
@@ -1036,6 +1035,8 @@ class TripSeeder extends Seeder
                 'invoice_date' => now()->subDays(2)->toDateString(),
                 'eway_bill_number' => '3313100200300400',
                 'eway_bill_validity_date' => now()->addDays(12)->toDateString(),
+                'shipping_bill_no' => 'SBL3300200',
+                'shipping_bill_date' => now()->subDays(1)->toDateString(),
                 'dispatch_location_name' => 'Iyer Impex — Ambattur Factory',
                 'dispatch_address' => 'Survey No. 45, Ambattur Industrial Estate',
                 'dispatch_city' => 'Chennai',
@@ -1060,7 +1061,6 @@ class TripSeeder extends Seeder
                 'destination_port_category' => 'port',
                 'trip_start_time' => now()->subDays(1),
                 'expected_delivery_date' => now()->addDays(35)->toDateString(),
-                // Near Chennai port approach (Rajaji Salai)
                 'last_known_lat' => 13.1100,
                 'last_known_lng' => 80.2200,
                 'last_known_source' => 'driver_mobile',
@@ -1078,6 +1078,7 @@ class TripSeeder extends Seeder
                 'status' => TripStatus::Completed,
                 'trip_type' => TripType::Domestic,
                 'transport_mode' => TripTransportationMode::Road,
+                'uses_sepio_seal' => false,
                 'driver_name' => 'Balaji Krishnaswamy',
                 'driver_phone' => '9944001122',
                 'driver_license' => 'TN0120190034567',
@@ -1132,13 +1133,14 @@ class TripSeeder extends Seeder
             ],
 
             // ─────────────────────────────────────────────────────────────────
-            // II-T05 | ACTIVE — AT_PORT (Singapore container at Chennai Port, customs)
+            // II-T05 | ACTIVE — vessel at Chennai Port, customs
             // ─────────────────────────────────────────────────────────────────
             [
                 'trip_ref' => 'TR_II_T05',
-                'status' => TripStatus::AtPort,
+                'status' => TripStatus::Active,
                 'trip_type' => TripType::Import,
                 'transport_mode' => TripTransportationMode::Sea,
+                'uses_sepio_seal' => true,
                 'container_number' => 'SGSIN5501234',
                 'container_type' => '40HC',
                 'carrier_scac' => 'OOLU',
@@ -1170,9 +1172,6 @@ class TripSeeder extends Seeder
                 'destination_port_name' => 'Chennai Port (Kamarajar Port)',
                 'destination_port_code' => 'INMAA',
                 'destination_port_category' => 'port',
-                'vessel_name' => 'OOCL HONG KONG',
-                'vessel_imo_number' => 'IMO9776195',
-                'voyage_number' => 'AE2-334E',
                 'bill_of_lading' => 'OOLUSGP5501234',
                 'eta' => now()->subDays(2),
                 'etd' => now()->subDays(8),
@@ -1188,13 +1187,14 @@ class TripSeeder extends Seeder
             ],
 
             // ─────────────────────────────────────────────────────────────────
-            // II-T06 | ACTIVE — VESSEL_ARRIVED (Singapore → Chennai, customs hold)
+            // II-T06 | ACTIVE — arrived, customs hold
             // ─────────────────────────────────────────────────────────────────
             [
                 'trip_ref' => 'TR_II_T06',
-                'status' => TripStatus::VesselArrived,
+                'status' => TripStatus::Active,
                 'trip_type' => TripType::Import,
                 'transport_mode' => TripTransportationMode::Multimodal,
+                'uses_sepio_seal' => true,
                 'container_number' => 'APLU3301122',
                 'container_type' => '20GP',
                 'carrier_scac' => 'APLU',
@@ -1226,9 +1226,6 @@ class TripSeeder extends Seeder
                 'destination_port_name' => 'Chennai Port (Kamarajar Port)',
                 'destination_port_code' => 'INMAA',
                 'destination_port_category' => 'port',
-                'vessel_name' => 'APL SENTOSA',
-                'vessel_imo_number' => 'IMO9632179',
-                'voyage_number' => 'AE1-445E',
                 'bill_of_lading' => 'APLUSGP3301122',
                 'eta' => now()->subDays(1),
                 'etd' => now()->subDays(12),
@@ -1252,6 +1249,7 @@ class TripSeeder extends Seeder
                 'status' => TripStatus::Draft,
                 'trip_type' => TripType::Import,
                 'transport_mode' => TripTransportationMode::Sea,
+                'uses_sepio_seal' => false,
                 'container_number' => 'HLCU6601234',
                 'container_type' => '40GP',
                 'carrier_scac' => 'HLCU',
@@ -1289,13 +1287,14 @@ class TripSeeder extends Seeder
             ],
 
             // ─────────────────────────────────────────────────────────────────
-            // II-T08 | ACTIVE — IN_TRANSIT DOMESTIC (Chennai → Delhi, NH-44)
+            // II-T08 | ACTIVE — Road leg, currently near Hyderabad
             // ─────────────────────────────────────────────────────────────────
             [
                 'trip_ref' => 'TR_II_T08',
-                'status' => TripStatus::InTransit,
+                'status' => TripStatus::Active,
                 'trip_type' => TripType::Domestic,
                 'transport_mode' => TripTransportationMode::Road,
+                'uses_sepio_seal' => false,
                 'driver_name' => 'Ravi Shankar',
                 'driver_phone' => '9900112233',
                 'driver_license' => 'TN0120200056789',
@@ -1336,7 +1335,6 @@ class TripSeeder extends Seeder
                 'delivery_lng' => 77.2877,
                 'trip_start_time' => now()->subDays(2),
                 'expected_delivery_date' => now()->addDays(2)->toDateString(),
-                // Currently near Hyderabad on NH-44
                 'last_known_lat' => 17.3850,
                 'last_known_lng' => 78.4867,
                 'last_known_source' => 'driver_mobile',
@@ -1350,32 +1348,29 @@ class TripSeeder extends Seeder
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
+    /**
+     * Inserts one TripEvent per lifecycle status the trip has been through.
+     * Uses the *new* TripStatus enum values (draft → active → out_for_delivery → delivered → completed).
+     */
     private function seedEvents(Trip $trip, User $user): void
     {
         $statusFlow = [
             TripStatus::Draft,
-            TripStatus::InTransit,
-            TripStatus::AtPort,
-            TripStatus::OnVessel,
-            TripStatus::InTransshipment,
-            TripStatus::VesselArrived,
+            TripStatus::Active,
             TripStatus::OutForDelivery,
             TripStatus::Delivered,
             TripStatus::Completed,
         ];
 
-        $currentIndex = array_search($trip->status, $statusFlow);
+        $currentIndex = array_search($trip->status, $statusFlow, true);
         if ($currentIndex === false) $currentIndex = 0;
 
         $baseDaysAgo = match ($trip->status) {
             TripStatus::Completed => 45,
             TripStatus::Delivered => 16,
             TripStatus::OutForDelivery => 4,
-            TripStatus::VesselArrived => 20,
-            TripStatus::InTransshipment => 22,
-            TripStatus::OnVessel => 15,
-            TripStatus::AtPort => 8,
-            TripStatus::InTransit => 3,
+            TripStatus::Active => 3,
+            TripStatus::Draft => 0,
             default => 0,
         };
 
@@ -1387,23 +1382,29 @@ class TripSeeder extends Seeder
                 'event_type' => $i === 0 ? 'trip_created' : 'status_changed',
                 'previous_status' => $i > 0 ? $statusFlow[$i - 1]->value : null,
                 'new_status' => $statusFlow[$i]->value,
-                'event_data' => json_encode(['trip_ref' => $trip->trip_ref, 'triggered_by' => 'user']),
+                'event_data' => json_encode([
+                    'trip_ref' => $trip->trip_ref,
+                    'triggered_by' => 'user',
+                    'uses_sepio_seal' => (bool) $trip->uses_sepio_seal,
+                ]),
                 'actor_type' => 'user',
                 'actor_id' => $user->id,
                 'created_at' => now()->subDays($daysAgo),
             ]);
         }
 
-        if ($trip->vessel_name && $currentIndex >= 3) {
+        // Log the BL/eta snapshot when trip gets `Active` status
+        if (in_array($trip->status, [TripStatus::Active, TripStatus::OutForDelivery, TripStatus::Delivered, TripStatus::Completed], true)
+            && $trip->bill_of_lading) {
             TripEvent::insert([
                 'customer_id' => $trip->customer_id,
                 'trip_id' => $trip->id,
-                'event_type' => 'vessel_info_added',
+                'event_type' => 'bill_of_lading_set',
                 'event_data' => json_encode([
-                    'vessel_name' => $trip->vessel_name,
-                    'imo' => $trip->vessel_imo_number,
-                    'voyage_number' => $trip->voyage_number,
                     'bill_of_lading' => $trip->bill_of_lading,
+                    'eta' => optional($trip->eta)->toIso8601String(),
+                    'etd' => optional($trip->etd)->toIso8601String(),
+                    'container_number' => $trip->container_number,
                 ]),
                 'actor_type' => 'user',
                 'actor_id' => $user->id,
@@ -1419,7 +1420,7 @@ class TripSeeder extends Seeder
             ['doc_type' => 'e_invoice', 'file_name' => 'EInvoice_' . $trip->trip_ref . '.pdf'],
         ];
 
-        if (in_array($trip->status, [TripStatus::Delivered, TripStatus::Completed])) {
+        if (in_array($trip->status, [TripStatus::Delivered, TripStatus::Completed], true)) {
             $docs[] = ['doc_type' => 'e_pod', 'file_name' => 'ePOD_' . $trip->trip_ref . '.pdf'];
         }
 
@@ -1427,8 +1428,13 @@ class TripSeeder extends Seeder
             $docs[] = ['doc_type' => 'supporting', 'file_name' => 'BL_' . $trip->bill_of_lading . '.pdf'];
         }
 
+        if ($trip->shipping_bill_no) {
+            $docs[] = ['doc_type' => 'supporting', 'file_name' => 'ShippingBill_' . $trip->shipping_bill_no . '.pdf'];
+        }
+
         foreach ($docs as $doc) {
-            if (TripDocument::where('trip_id', $trip->id)->where('doc_type', $doc['doc_type'])->exists()) {
+            if (TripDocument::where('trip_id', $trip->id)->where('doc_type', $doc['doc_type'])
+                ->where('file_name', $doc['file_name'])->exists()) {
                 continue;
             }
             TripDocument::insert([

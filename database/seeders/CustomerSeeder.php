@@ -13,9 +13,15 @@ use Illuminate\Support\Facades\Hash;
 
 /**
  * Creates 6 customers — one in each meaningful onboarding status —
- * plus a customer_admin user for each.
+ * plus a customer_admin + (where applicable) operations_executive user for each.
  *
- * Credentials for every customer_admin: password = "password"
+ * Demonstrates the optional Sepio integration lifecycle:
+ *   - sepio_enabled = false  →  sepio_status = null (Disabled)
+ *   - sepio_enabled = true   →  sepio_status progresses through SepioStatus cases
+ *
+ * Insurance (IL) policy fields live on the customer now (moved from customer_wallets).
+ *
+ * Credentials for every customer_admin/ops user: password = "password"
  */
 class CustomerSeeder extends Seeder
 {
@@ -34,6 +40,18 @@ class CustomerSeeder extends Seeder
         $customers = [];
 
         foreach ($definitions as $def) {
+            $onboardingStatus = $def['onboarding_status'];
+            $ilDecision = in_array(
+                $onboardingStatus,
+                [
+                    CustomerOnboardingStatus::IlApproved->value,
+                    CustomerOnboardingStatus::IlRejected->value,
+                    CustomerOnboardingStatus::IlParked->value,
+                    CustomerOnboardingStatus::Completed->value,
+                ],
+                true
+            );
+
             $customer = Customer::firstOrCreate(
                 ['email' => $def['email']],
                 [
@@ -43,34 +61,50 @@ class CustomerSeeder extends Seeder
                     'mobile' => $def['mobile'],
                     'company_type' => $def['company_type'],
                     'industry_type' => $def['industry_type'] ?? 'Export / Import',
-                    'onboarding_status' => $def['onboarding_status'],
-                    'is_active' => $def['is_active'] ?? true,
+                    'onboarding_status' => $onboardingStatus,
+
+                    // ── Sepio integration (optional) ─────────────────────────
+                    'sepio_enabled' => $def['sepio_enabled'] ?? false,
+                    // sepio_status is nullable in the DB; null means Sepio is not active.
+                    'sepio_status' => $def['sepio_enabled'] ?? false
+                        ? ($def['sepio_status'] ?? null)
+                        : null,
                     'sepio_company_id' => $def['sepio_company_id'] ?? null,
+                    'sepio_token_expires_at' => $def['sepio_token_expires_at'] ?? null,
+
+                    // ── IL policy fields (moved from customer_wallets) ───────
+                    'il_policy_number' => $def['il_policy_number'] ?? null,
+                    'il_policy_expiry' => $def['il_policy_expiry'] ?? null,
+                    'sum_insured' => $def['sum_insured'] ?? null,
+                    'gwp' => $def['gwp'] ?? null,
+
+                    // ── Tax / compliance identifiers ─────────────────────────
                     'gst_number' => $def['gst_number'] ?? null,
-                    'pan_number' => $def['pan_number'] ?? null,
                     'iec_number' => $def['iec_number'] ?? null,
-                    'cin_number' => $def['cin_number'] ?? null,
+
+                    // ── Billing address (used by CustomerLocationSeeder too) ─
                     'billing_address' => $def['billing_address'] ?? null,
+                    'billing_landmark' => $def['billing_landmark'] ?? null,
                     'billing_city' => $def['billing_city'] ?? null,
                     'billing_state' => $def['billing_state'] ?? null,
                     'billing_pincode' => $def['billing_pincode'] ?? null,
                     'billing_country' => 'India',
+
+                    // ── Primary / alternate contact ──────────────────────────
                     'primary_contact_name' => $def['first_name'] . ' ' . $def['last_name'],
                     'primary_contact_email' => $def['email'],
                     'primary_contact_mobile' => $def['mobile'],
-                    'il_approved_by_id' => in_array(
-                        $def['onboarding_status'],
-                        [CustomerOnboardingStatus::IlApproved, CustomerOnboardingStatus::IlRejected,
-                            CustomerOnboardingStatus::IlParked, CustomerOnboardingStatus::Completed,
-                            CustomerOnboardingStatus::MfgRejected]
-                    ) ? $adminUser->id : null,
-                    'il_approved_at' => in_array(
-                        $def['onboarding_status'],
-                        [CustomerOnboardingStatus::IlApproved, CustomerOnboardingStatus::IlRejected,
-                            CustomerOnboardingStatus::IlParked, CustomerOnboardingStatus::Completed,
-                            CustomerOnboardingStatus::MfgRejected]
-                    ) ? now()->subDays(rand(1, 15)) : null,
+                    'alternate_contact_name' => $def['alternate_contact_name'] ?? null,
+                    'alternate_contact_phone' => $def['alternate_contact_phone'] ?? null,
+                    'alternate_contact_email' => $def['alternate_contact_email'] ?? null,
+
+                    'is_active' => $def['is_active'] ?? true,
+
+                    // ── IL decision fields ───────────────────────────────────
+                    'il_approved_by_id' => $ilDecision ? $adminUser->id : null,
+                    'il_approved_at' => $ilDecision ? now()->subDays(rand(1, 15)) : null,
                     'il_remarks' => $def['il_remarks'] ?? null,
+
                     'created_by_id' => $adminUser->id,
                 ]
             );
@@ -91,10 +125,10 @@ class CustomerSeeder extends Seeder
 
             // ── Operations Executive user — only for customers that can have trips ──
             // (IlApproved and Completed — they have locations, ports, wallets)
-            if (in_array($def['onboarding_status'], [
-                CustomerOnboardingStatus::IlApproved,
-                CustomerOnboardingStatus::Completed,
-            ])) {
+            if (in_array($onboardingStatus, [
+                CustomerOnboardingStatus::IlApproved->value,
+                CustomerOnboardingStatus::Completed->value,
+            ], true)) {
                 $companySlug = strtolower(str_replace(' ', '', $def['company_name']));
                 User::firstOrCreate(
                     ['email' => 'ops.' . $customer->id . '@' . $companySlug . '.test'],
@@ -123,7 +157,7 @@ class CustomerSeeder extends Seeder
     private function definitions(): array
     {
         return [
-            // 1. Pending — just registered, no profile filled
+            // 1. Pending — just registered, no profile filled, no Sepio
             [
                 'first_name' => 'Ravi',
                 'last_name' => 'Sharma',
@@ -131,10 +165,11 @@ class CustomerSeeder extends Seeder
                 'email' => 'ravi.sharma@sharmaexports.test',
                 'mobile' => '9876543201',
                 'company_type' => CompanyType::PvtLtd,
-                'onboarding_status' => CustomerOnboardingStatus::Pending,
+                'onboarding_status' => CustomerOnboardingStatus::Pending->value,
+                'sepio_enabled' => false,
             ],
 
-            // 2. Submitted — profile complete, docs uploaded, awaiting IL review
+            // 2. Submitted — profile complete, docs uploaded, awaiting IL review, no Sepio
             [
                 'first_name' => 'Priya',
                 'last_name' => 'Mehta',
@@ -142,9 +177,9 @@ class CustomerSeeder extends Seeder
                 'email' => 'priya.mehta@mehtaintl.test',
                 'mobile' => '9876543202',
                 'company_type' => CompanyType::Llp,
-                'onboarding_status' => CustomerOnboardingStatus::Submitted,
+                'onboarding_status' => CustomerOnboardingStatus::Submitted->value,
+                'sepio_enabled' => false,
                 'gst_number' => '27AABCM1234A1Z5',
-                'pan_number' => 'AABCM1234A',
                 'iec_number' => 'IEC0001002',
                 'billing_address' => '12, Commerce House, Nariman Point',
                 'billing_city' => 'Mumbai',
@@ -152,7 +187,7 @@ class CustomerSeeder extends Seeder
                 'billing_pincode' => '400021',
             ],
 
-            // 3. IL Parked — needs more info
+            // 3. IL Parked — needs more info, no Sepio
             [
                 'first_name' => 'Arjun',
                 'last_name' => 'Patel',
@@ -160,9 +195,9 @@ class CustomerSeeder extends Seeder
                 'email' => 'arjun.patel@pateltraders.test',
                 'mobile' => '9876543203',
                 'company_type' => CompanyType::Proprietorship,
-                'onboarding_status' => CustomerOnboardingStatus::IlParked,
+                'onboarding_status' => CustomerOnboardingStatus::IlParked->value,
+                'sepio_enabled' => false,
                 'gst_number' => '24ABCPP1234B1ZV',
-                'pan_number' => 'ABCPP1234B',
                 'iec_number' => 'IEC0001003',
                 'billing_address' => 'Plot 5, GIDC Estate, Vatva',
                 'billing_city' => 'Ahmedabad',
@@ -171,7 +206,7 @@ class CustomerSeeder extends Seeder
                 'il_remarks' => 'GST certificate is blurry. Please re-upload a clear copy.',
             ],
 
-            // 4. IL Approved — approved by IL, Sepio onboarding triggered
+            // 4. IL Approved — Sepio registration started but still pending
             [
                 'first_name' => 'Sunita',
                 'last_name' => 'Rao',
@@ -179,19 +214,24 @@ class CustomerSeeder extends Seeder
                 'email' => 'sunita.rao@raoglobal.test',
                 'mobile' => '9876543204',
                 'company_type' => CompanyType::PvtLtd,
-                'onboarding_status' => CustomerOnboardingStatus::IlApproved,
+                'onboarding_status' => CustomerOnboardingStatus::IlApproved->value,
+                'sepio_enabled' => true,
+                'sepio_status' => 'pending',
                 'sepio_company_id' => 'SPC10042',
                 'gst_number' => '29AABCR5678C1Z3',
-                'pan_number' => 'AABCR5678C',
                 'iec_number' => 'IEC0001004',
+                'il_policy_number' => 'ILPOL-' . str_pad(10042, 5, '0', STR_PAD_LEFT),
+                'il_policy_expiry' => now()->addYear(),
+                'sum_insured' => 60_00_000.00,
+                'gwp' => 18_000.00,
                 'billing_address' => '7th Floor, UB City, Vittal Mallya Road',
                 'billing_city' => 'Bengaluru',
                 'billing_state' => 'Karnataka',
                 'billing_pincode' => '560001',
-                'il_remarks' => 'All documents verified. Approved.',
+                'il_remarks' => 'All documents verified. Approved. Awaiting Sepio KYC.',
             ],
 
-            // 5. Completed — fully onboarded, can place orders
+            // 5. Completed (no Sepio) — fully onboarded, can place orders (Sepio not enabled)
             [
                 'first_name' => 'Kiran',
                 'last_name' => 'Verma',
@@ -199,11 +239,14 @@ class CustomerSeeder extends Seeder
                 'email' => 'kiran.verma@vermalogistics.test',
                 'mobile' => '9876543205',
                 'company_type' => CompanyType::Partnership,
-                'onboarding_status' => CustomerOnboardingStatus::Completed,
-                'sepio_company_id' => 'SPC10078',
+                'onboarding_status' => CustomerOnboardingStatus::Completed->value,
+                'sepio_enabled' => false,
                 'gst_number' => '07AABCV9012D1Z1',
-                'pan_number' => 'AABCV9012D',
                 'iec_number' => 'IEC0001005',
+                'il_policy_number' => 'ILPOL-' . str_pad(10078, 5, '0', STR_PAD_LEFT),
+                'il_policy_expiry' => now()->addYear(),
+                'sum_insured' => 75_00_000.00,
+                'gwp' => 22_000.00,
                 'billing_address' => 'B-12, Connaught Place',
                 'billing_city' => 'New Delhi',
                 'billing_state' => 'Delhi',
@@ -211,7 +254,7 @@ class CustomerSeeder extends Seeder
                 'il_remarks' => 'Full verification passed.',
             ],
 
-            // 6. Another Completed customer — for multi-tenant testing
+            // 6. Completed (Sepio verified) — fully onboarded, Sepio ready — primary tenant for Sepio orders
             [
                 'first_name' => 'Meena',
                 'last_name' => 'Iyer',
@@ -219,16 +262,22 @@ class CustomerSeeder extends Seeder
                 'email' => 'meena.iyer@iyerimpex.test',
                 'mobile' => '9876543206',
                 'company_type' => CompanyType::PvtLtd,
-                'onboarding_status' => CustomerOnboardingStatus::Completed,
+                'onboarding_status' => CustomerOnboardingStatus::Completed->value,
+                'sepio_enabled' => true,
+                'sepio_status' => 'verified',
                 'sepio_company_id' => 'SPC10099',
+                'sepio_token_expires_at' => now()->addDays(20),
                 'gst_number' => '33AABCI3456E1Z8',
-                'pan_number' => 'AABCI3456E',
                 'iec_number' => 'IEC0001006',
+                'il_policy_number' => 'ILPOL-' . str_pad(10099, 5, '0', STR_PAD_LEFT),
+                'il_policy_expiry' => now()->addYear(),
+                'sum_insured' => 90_00_000.00,
+                'gwp' => 28_000.00,
                 'billing_address' => '22, Anna Salai',
                 'billing_city' => 'Chennai',
                 'billing_state' => 'Tamil Nadu',
                 'billing_pincode' => '600002',
-                'il_remarks' => 'Documents and IEC verified.',
+                'il_remarks' => 'Documents and IEC verified. Sepio integration complete.',
             ],
         ];
     }
