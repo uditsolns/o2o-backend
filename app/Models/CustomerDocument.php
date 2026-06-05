@@ -13,7 +13,8 @@ class CustomerDocument extends Model
 
     protected $fillable = [
         'customer_id', 'uploaded_by_id', 'doc_type',
-        'doc_number', 'file_name', 'url', 'sepio_file_name',
+        'doc_number', 'file_name', 'url',
+        'sepio_file_name', 'sepio_rejection_reason',
     ];
 
     protected $casts = [

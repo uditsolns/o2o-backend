@@ -113,7 +113,7 @@ class CustomerController extends Controller
     {
         $this->authorize('update', $customer);
 
-        $customer->load('ports', 'locations', 'documents');
+        $customer->load('ports', 'locations', 'documents', 'signatories');
 
         return response()->json($this->service->getSepioReadiness($customer));
     }
@@ -122,7 +122,7 @@ class CustomerController extends Controller
     {
         $this->authorize('enableSepio', $customer);
 
-        $customer->load('ports', 'locations', 'documents');
+        $customer->load('ports', 'locations', 'documents', 'signatories');
 
         $customer = $this->service->enableSepio($customer, $request->user());
 

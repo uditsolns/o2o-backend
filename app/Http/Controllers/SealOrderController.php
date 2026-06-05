@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Requests\SealOrder\ConfirmCashPaymentRequest;
 use App\Http\Requests\SealOrder\SealOrderActionRequest;
 use App\Http\Requests\SealOrder\StoreSealOrderRequest;
 use App\Http\Requests\Wallet\ConfirmCashPaymentRequest;

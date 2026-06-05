@@ -30,7 +30,7 @@ class UploadDocumentRequest extends FormRequest
         return [
             'doc_type' => ['required', Rule::enum(CustomerDocType::class)],
             'doc_number' => ['nullable', 'string', 'max:100'],
-            'file' => ['required', 'file', "mimes:{$allowedMimes}", 'max:10240'],
+            'file' => ['required', 'file', "mimes:{$allowedMimes}", "max:1024"],
         ];
     }
 
@@ -38,6 +38,7 @@ class UploadDocumentRequest extends FormRequest
     {
         return [
             'file.mimes' => 'This document type only accepts PDF files.',
+            'file.max' => 'File exceeds the 1 MB upload limit.',
         ];
     }
 }

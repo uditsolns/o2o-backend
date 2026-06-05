@@ -100,7 +100,7 @@ readonly class TripService
             $this->upsertDriverUser($customer->id, $trip);
             $this->upsertConsignor($customer->id, $trip);
             $this->upsertConsignee($customer->id, $trip);
-            $this->routeService->findOrCreateFromTripData($customer->id, $data);
+            // $this->routeService->findOrCreateFromTripData($customer->id, $data);
 
             // Store segments
             foreach ($segments as $segmentData) {
@@ -267,7 +267,7 @@ readonly class TripService
     {
         return DB::transaction(function () use ($trip, $data, $by) {
             $trip->loadMissing('customer.wallet');
-            
+
             $previousStatus = $trip->status->value;
 
             $trip->update([

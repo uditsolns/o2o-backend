@@ -172,13 +172,33 @@ readonly class SepioOnboardingService
             try {
                 $this->uploadDocument($customer, $document);
             } catch (\Throwable $e) {
-                Log::error('Sepio uploadDocument failed', [
-                    'customer_id' => $customer->id,
-                    'doc_id' => $document->id,
-                    'error' => $e->getMessage(),
-                ]);
+                $this->rejectDocument(
+                    $document,
+                    $e->getMessage(),
+                    context: ['source' => 'exception']
+                );
             }
         }
+    }
+
+    /**
+     * Persist a Sepio-side rejection on the document and log it.
+     * Cleared automatically by CustomerService::retrySepioRegistration()
+     * once the customer re-uploads or the platform retries.
+     */
+    private function rejectDocument(
+        CustomerDocument $document,
+        string $reason,
+        array $context = []
+    ): void {
+        $document->update(['sepio_rejection_reason' => $reason]);
+
+        Log::warning('Sepio KYC document rejected', array_merge([
+            'doc_id' => $document->id,
+            'customer_id' => $document->customer_id,
+            'doc_type' => is_string($document->doc_type) ? $document->doc_type : $document->doc_type->value,
+            'reason' => $reason,
+        ], $context));
     }
 
     public function uploadDocument(Customer $customer, CustomerDocument $document): void
@@ -197,22 +217,18 @@ readonly class SepioOnboardingService
         $extension = strtolower(pathinfo($document->file_name, PATHINFO_EXTENSION));
 
         if (in_array($docType, $pdfOnlyTypes, true) && $extension !== 'pdf') {
-            Log::warning('Sepio KYC upload skipped — PDF required for this doc type', [
-                'customer_id' => $customer->id,
-                'doc_id' => $document->id,
-                'doc_type' => is_string($docType) ? $docType : $docType->value,
-                'extension' => $extension,
-            ]);
+            $this->rejectDocument(
+                $document,
+                'Sepio requires this document type to be a PDF.',
+                ['extension' => $extension]
+            );
             return;
         }
 
         $fileContents = Storage::get($document->url);
 
         if (!$fileContents) {
-            Log::error('Sepio KYC upload — file missing in storage', [
-                'customer_id' => $customer->id,
-                'doc_id' => $document->id,
-            ]);
+            $this->rejectDocument($document, 'File is missing from storage and could not be uploaded to Sepio.');
             return;
         }
 
@@ -250,12 +266,7 @@ readonly class SepioOnboardingService
 
         if ($response->failed()) {
             $msg = $this->client->parseError($response, 'KYC upload failed.');
-            Log::error('Sepio KYC upload failed', [
-                'customer_id' => $customer->id,
-                'doc_id' => $document->id,
-                'doc_type' => is_string($docType) ? $docType : $docType->value,
-                'error' => $msg,
-            ]);
+            $this->rejectDocument($document, $msg);
             return;
         }
 

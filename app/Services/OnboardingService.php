@@ -195,56 +195,44 @@ class OnboardingService
     {
         $errors = [];
 
-        // ── Profile fields ────────────────────────────────────────────────────
-        $requiredFields = [
-            'company_type',
-            'gst_number',
-            'billing_address',
-            'billing_city',
-            'billing_state',
-            'billing_pincode',
-        ];
-
         if ($customer->sepio_enabled) {
-            $requiredFields[] = 'iec_number';
-        }
-
-        foreach ($requiredFields as $field) {
-            if (empty($customer->$field)) {
-                $errors[] = "Field '{$field}' is required before submission.";
-            }
-        }
-
-        // ── Signatories ───────────────────────────────────────────────────────
-        if ($customer->signatories()->count() === 0) {
-            $errors[] = 'At least one authorized signatory is required.';
-        }
-
-        // ── Documents ─────────────────────────────────────────────────────────
-        $uploaded = $customer->documents()
-            ->pluck('doc_type')
-            ->map(fn($t) => is_string($t) ? $t : $t->value)
-            ->all();
-
-        foreach (CustomerDocType::required($customer->sepio_enabled) as $type) {
-            if (!in_array($type, $uploaded, true)) {
-                $errors[] = "Document '{$type}' is required before submission.";
-            }
-        }
-
-        // ── Sepio-specific checks — delegate to shared trait ──────────────────
-        // This runs the same checks as enable-sepio and getSepioReadiness(),
-        // ensuring all three gates use identical validation logic.
-        if ($customer->sepio_enabled) {
-            $customer->loadMissing('ports', 'locations', 'documents');
+            // Sepio flow — delegate entirely to the shared trait so that the
+            // submit, enable-sepio, and readiness-endpoint gates are identical.
+            $customer->loadMissing('ports', 'locations', 'documents', 'signatories');
             $readiness = $this->buildSepioReadiness($customer);
 
             if (!$readiness['is_ready']) {
-                foreach ($readiness['missing'] as $missing) {
-                    // Avoid duplicating document errors already caught above
-                    if (!in_array($missing, $errors, true)) {
-                        $errors[] = $missing;
-                    }
+                $errors = $readiness['missing'];
+            }
+        } else {
+            // Non-Sepio flow — basic gating only.
+            $requiredFields = [
+                'company_type',
+                'gst_number',
+                'billing_address',
+                'billing_city',
+                'billing_state',
+                'billing_pincode',
+            ];
+
+            foreach ($requiredFields as $field) {
+                if (empty($customer->$field)) {
+                    $errors[] = "Field '{$field}' is required before submission.";
+                }
+            }
+
+            if ($customer->signatories()->count() === 0) {
+                $errors[] = 'At least one authorized signatory is required.';
+            }
+
+            $uploaded = $customer->documents()
+                ->pluck('doc_type')
+                ->map(fn($t) => is_string($t) ? $t : $t->value)
+                ->all();
+
+            foreach (CustomerDocType::required(false) as $type) {
+                if (!in_array($type, $uploaded, true)) {
+                    $errors[] = "Document '{$type}' is required before submission.";
                 }
             }
         }
