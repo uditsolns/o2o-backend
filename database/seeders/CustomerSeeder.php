@@ -19,12 +19,17 @@ use Illuminate\Support\Facades\Hash;
  *   - sepio_enabled = false  →  sepio_status = null (Disabled)
  *   - sepio_enabled = true   →  sepio_status progresses through SepioStatus cases
  *
- * The Sepio-enabled customers use the real `sepio_company_id` values that
- * our testing environment has registered on the Sepio side. That way the
- * frontend, status checks, and Sepio-side code paths can be exercised
- * against the live integration using the same primary keys — but the
- * auth token and encrypted credentials are intentionally left null
- * (see notes below).
+ * This seeder is fully self-contained and synthetic. The Sepio-enabled
+ * customers use placeholder sepio_company_id values (SPC10xxx) and
+ * sepio_status=verification_pending so the Sepio-aware code paths can
+ * still be exercised end-to-end (status checks, read-only Sepio KYC
+ * inspection, etc.) without any real Sepio integration. The frontend
+ * can be developed against the realistic shape of the data without ever
+ * triggering a real Sepio API call from local.
+ *
+ * For data with real sepio_company_id values + auth tokens, see
+ * LiveSepioSeeder (loads database/o2o.sql which the operator uploads
+ * at seed time).
  *
  * Insurance (IL) policy fields live on the customer now (moved from customer_wallets).
  *
@@ -218,10 +223,9 @@ class CustomerSeeder extends Seeder
                 'il_remarks' => 'GST certificate is blurry. Please re-upload a clear copy.',
             ],
 
-            // 4. IL Approved — Sepio registered, awaiting verification on the
-            // Sepio side. The live sepio_company_id (102869) is the same
-            // primary key registered on our testing environment so any
-            // Sepio-side debugging references the correct company.
+            // 4. IL Approved — Sepio registration submitted, awaiting
+            // Sepio-side verification. Synthetic sepio_company_id; for
+            // real testing-environment ids use the LiveSepioSeeder profile.
             [
                 'first_name' => 'Sunita',
                 'last_name' => 'Rao',
@@ -232,7 +236,7 @@ class CustomerSeeder extends Seeder
                 'onboarding_status' => CustomerOnboardingStatus::IlApproved->value,
                 'sepio_enabled' => true,
                 'sepio_status' => 'verification_pending',
-                'sepio_company_id' => '102869',
+                'sepio_company_id' => 'SPC10042',
                 // sepio_token / sepio_credentials intentionally null — see
                 // SECURITY NOTE in the class docblock.
                 'gst_number' => '29AABCR5678C1Z3',
@@ -271,10 +275,9 @@ class CustomerSeeder extends Seeder
                 'il_remarks' => 'Full verification passed.',
             ],
 
-            // 6. Completed (Sepio registered) — fully onboarded, sepio
-            // company registered on the Sepio side, awaiting verification.
-            // The live sepio_company_id (102866) is the testing environment
-            // primary key.
+            // 6. Completed (Sepio registered) — fully onboarded, Sepio
+            // company registration submitted, awaiting verification on the
+            // Sepio side. Synthetic sepio_company_id.
             [
                 'first_name' => 'Meena',
                 'last_name' => 'Iyer',
@@ -285,7 +288,7 @@ class CustomerSeeder extends Seeder
                 'onboarding_status' => CustomerOnboardingStatus::Completed->value,
                 'sepio_enabled' => true,
                 'sepio_status' => 'verification_pending',
-                'sepio_company_id' => '102866',
+                'sepio_company_id' => 'SPC10099',
                 // sepio_token / sepio_credentials intentionally null — see
                 // SECURITY NOTE in the class docblock.
                 'gst_number' => '33AABCI3456E1Z8',

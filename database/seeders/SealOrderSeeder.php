@@ -70,15 +70,15 @@ class SealOrderSeeder extends Seeder
     // ── Order definitions ─────────────────────────────────────────────────────
 
     /**
-     * Real Sepio order ids use a `SPPL\d{6}` shape (e.g. SPPL108745). The
-     * local seeder uses a stable per-customer-per-order pattern that
-     * produces realistic-looking identifiers without ever colliding with
-     * the live environment.
+     * Sepio order ids use a stable per-customer-per-order pattern so the
+     * local seeder never collides with real testing-environment ids. The
+     * id is purely synthetic — this seeder has no connection to
+     * database/o2o.sql; for live data, see LiveSepioSeeder.
      *
-     * Sepio billing/shipping address ids (`address00006662`) and the port
-     * codes (`INBOM1`, `INBOA6`, `INAN1`) on each order mirror what
-     * production data looks like, so the local frontend can be tested
-     * against URLs that look like the real thing.
+     * Billing/shipping address ids come from the customer_locations
+     * seeder (synthetic placeholders). Port codes are real IN/UN/LOCODE
+     * values from the ports table — those are public reference data, not
+     * Sepio credentials.
      */
     private function orderDefinitions(
         Customer $customer, User $user, User $admin,
