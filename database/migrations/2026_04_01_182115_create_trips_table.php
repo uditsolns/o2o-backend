@@ -13,12 +13,18 @@ return new class extends Migration {
             $table->foreignId('customer_id')->constrained()->restrictOnDelete();
             $table->foreignId('created_by_id')->constrained('users')->restrictOnDelete();
             $table->foreignId('driver_user_id')->nullable()->constrained('users')->nullOnDelete();
+
+            // Seal FK is added in 2026_04_01_182341_create_add_deferred_seal_trip_fks
+            // because of the circular seals <-> trips FK.
             $table->unsignedBigInteger('seal_id')->nullable();
+            $table->boolean('uses_sepio_seal')->default(false);
+
             $table->string('trip_ref', 30)->unique();
             $table->enum('status', TripStatus::values())->default(TripStatus::Draft->value);
             $table->enum('trip_type', TripType::values())->nullable();
             $table->enum('transport_mode', TripTransportationMode::values())->nullable();
             $table->decimal('risk_score', 5, 2)->nullable();
+
             // Driver
             $table->string('driver_name')->nullable();
             $table->string('driver_license', 50)->nullable();
@@ -28,16 +34,20 @@ return new class extends Migration {
             $table->boolean('is_driver_aadhaar_verified')->default(false);
             $table->json('driver_license_verification_payload')->nullable();
             $table->json('driver_aadhaar_verification_payload')->nullable();
+
             // Vehicle
             $table->string('vehicle_number', 50)->nullable();
             $table->enum('vehicle_type', ['truck', 'trailer', 'container_carrier'])->nullable();
             $table->boolean('is_rc_verified')->default(false);
             $table->json('rc_verification_payload')->nullable();
             $table->boolean('is_verification_done')->default(false);
+
             // Driver mobile auth — shared with driver app, no Sanctum needed
             $table->string('tracking_token', 64)->nullable()->unique();
+
             // Cursor for FastTag polling — only fetch txns newer than this
             $table->timestamp('last_fastag_synced_at')->nullable();
+
             // Latest known position (denormalized for fast map queries)
             $table->decimal('last_known_lat', 10, 7)->nullable();
             $table->decimal('last_known_lng', 10, 7)->nullable();
@@ -47,6 +57,7 @@ return new class extends Migration {
             // Container
             $table->string('container_number', 50)->nullable();
             $table->string('container_type', 20)->nullable();
+
             // Cargo
             $table->string('cargo_type', 100)->nullable();
             $table->text('cargo_description')->nullable();
@@ -61,6 +72,9 @@ return new class extends Migration {
             $table->date('invoice_date')->nullable();
             $table->string('eway_bill_number', 50)->nullable();
             $table->date('eway_bill_validity_date')->nullable();
+            $table->string('shipping_bill_no', 20)->nullable();
+            $table->date('shipping_bill_date')->nullable();
+
             // Dispatch snapshot
             $table->string('dispatch_location_name')->nullable();
             $table->text('dispatch_address')->nullable();
@@ -73,6 +87,7 @@ return new class extends Migration {
             $table->string('dispatch_contact_email')->nullable();
             $table->decimal('dispatch_lat', 10, 7)->nullable();
             $table->decimal('dispatch_lng', 10, 7)->nullable();
+
             // Delivery snapshot
             $table->string('delivery_location_name')->nullable();
             $table->text('delivery_address')->nullable();
@@ -85,6 +100,7 @@ return new class extends Migration {
             $table->string('delivery_contact_email')->nullable();
             $table->decimal('delivery_lat', 10, 7)->nullable();
             $table->decimal('delivery_lng', 10, 7)->nullable();
+
             // Port snapshots
             $table->string('origin_port_name')->nullable();
             $table->string('origin_port_code', 20)->nullable();
@@ -92,34 +108,30 @@ return new class extends Migration {
             $table->string('destination_port_name')->nullable();
             $table->string('destination_port_code', 20)->nullable();
             $table->enum('destination_port_category', PortCategory::values())->nullable();
-            // Vessel
-            $table->string('vessel_name')->nullable();
-            $table->string('vessel_imo_number', 20)->nullable();
-            $table->string('mt_vessel_ship_id')->nullable()
-                ->comment('MarineTraffic SHIP_ID resolved from IMO');
-            $table->string('voyage_number', 100)->nullable();
+
+            // Vessel — minimal denormalized fields. Full vessel snapshot lives on
+            // trip_container_tracking; only these stay on the trip row directly.
             $table->string('bill_of_lading', 100)->nullable();
             $table->string('carrier_scac', 10)->nullable()
                 ->comment('Shipping line SCAC code e.g. MAEU, MSCU');
             $table->timestamp('eta')->nullable();
             $table->timestamp('etd')->nullable();
-            $table->timestamp('last_vessel_tracked_at')->nullable();
-            $table->timestamp('last_vessel_position_at')->nullable();
+
             // Timeline
             $table->date('dispatch_date')->nullable();
             $table->timestamp('trip_start_time')->nullable();
             $table->date('expected_delivery_date')->nullable();
             $table->date('actual_delivery_date')->nullable();
             $table->timestamp('trip_end_time')->nullable();
+
             // ePOD (merged with destination confirmation)
             $table->enum('epod_status', ['pending', 'completed'])->default('pending');
             $table->boolean('customs_hold')->default(false);
             $table->timestamp('epod_confirmed_at')->nullable();
             $table->foreignId('epod_confirmed_by_id')->nullable()->constrained('users')->nullOnDelete();
             $table->text('epod_confirmation_notes')->nullable();
-            $table->timestamps();
 
-            // TODO: add document upload during E POD
+            $table->timestamps();
 
             $table->index(['customer_id', 'status']);
             $table->index(['customer_id', 'container_number'], 'trips_customer_container_idx');

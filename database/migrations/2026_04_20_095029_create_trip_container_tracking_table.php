@@ -13,35 +13,59 @@ return new class extends Migration {
             $table->foreignId('customer_id')->constrained()->restrictOnDelete();
             $table->string('container_number', 20);
             $table->string('carrier_scac', 10);
+
+            // JSON-blob design (replaces the flat carrier/POL/POD/vessel
+            // columns we used originally) — keeps the schema compact while
+            // preserving every field Kpler ships in its shipment payload.
+            $table->json('carrier')->nullable()
+                ->comment('{scac, name}');
+            $table->json('container_specs')->nullable()
+                ->comment('{iso_code, type, size}');
+            $table->json('pol')->nullable()
+                ->comment('Full port of loading snapshot');
+            $table->json('pod')->nullable()
+                ->comment('Full port of discharge snapshot');
+            $table->json('current_vessel')->nullable()
+                ->comment('Full current vessel snapshot including operational_status');
+            $table->json('insights')->nullable()
+                ->comment('{arrival_delay_days, initial_carrier_eta, has_rollover}');
+            $table->json('pol_change_history')->nullable()
+                ->comment('insights.portOfLoadingChange[] from Kpler');
+            $table->json('pod_change_history')->nullable()
+                ->comment('insights.portOfDischargeChange[] from Kpler');
+
+            // MarineTraffic registration bookkeeping
+            $table->string('mt_vessel_ship_id')->nullable();
             $table->string('mt_tracking_request_id')->nullable();
             $table->string('mt_shipment_id')->nullable()->unique();
+
             $table->enum('tracking_status', ['not_registered', 'pending', 'active', 'failed'])
                 ->default('not_registered');
             $table->string('failed_reason')->nullable();
-            // Kpler transportation status: booked, in_transit, delivered, etc.
+
             $table->string('transportation_status')->nullable();
-            $table->smallInteger('arrival_delay_days')->nullable();
-            $table->timestamp('initial_carrier_eta')->nullable();
-            $table->boolean('has_rollover')->default(false);
-            $table->string('pol_name')->nullable()->comment('Port of Loading name');
-            $table->string('pol_unlocode', 10)->nullable();
-            $table->string('pod_name')->nullable()->comment('Port of Discharge name');
-            $table->string('pod_unlocode', 10)->nullable();
-            // Current vessel snapshot (from container API)
-            $table->string('current_vessel_name')->nullable();
+            $table->boolean('is_routing_inconclusive')->default(false)
+                ->comment('Set when Kpler returns routing_data_inconclusive');
+            $table->timestamp('transportation_status_updated_at')->nullable()
+                ->comment('When transportation_status last changed');
+
             $table->string('current_vessel_imo')->nullable();
-            $table->decimal('current_vessel_lat', 10, 7)->nullable();
-            $table->decimal('current_vessel_lng', 10, 7)->nullable();
-            $table->decimal('current_vessel_speed', 6, 2)->nullable();
-            $table->smallInteger('current_vessel_heading')->nullable();
-            $table->string('current_vessel_geo_area')->nullable();
-            $table->timestamp('current_vessel_position_at')->nullable();
             $table->timestamp('last_synced_at')->nullable();
+            $table->timestamp('last_vessel_position_at')->nullable();
+
             $table->json('raw_shipment_snapshot')->nullable();
+            $table->json('eta_history')->nullable()
+                ->comment('Array of {eta, recorded_at} pairs — full ETA change history');
+            $table->json('rollover_history')->nullable()
+                ->comment('Vessel rollover events received from Kpler');
+            $table->json('transshipment_ports')->nullable()
+                ->comment('Intermediate port stops from Kpler portsOfTransshipment');
+
             $table->timestamps();
 
-            $table->index(['tracking_status']);
-            $table->index(['mt_shipment_id']);
+            $table->index('tracking_status');
+            $table->index('mt_shipment_id');
+            $table->index('transportation_status');
         });
     }
 

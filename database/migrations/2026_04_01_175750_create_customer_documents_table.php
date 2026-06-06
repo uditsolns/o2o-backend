@@ -17,6 +17,8 @@ return new class extends Migration {
             $table->string('file_name');
             $table->string('url');
             $table->string('sepio_file_name')->nullable();
+            $table->string('sepio_rejection_reason')->nullable()
+                ->comment('Populated when Sepio rejects this KYC document during verification');
             $table->timestamp('created_at')->useCurrent();
 
             $table->index(['customer_id', 'doc_type']);
