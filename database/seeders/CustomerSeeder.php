@@ -19,9 +19,21 @@ use Illuminate\Support\Facades\Hash;
  *   - sepio_enabled = false  →  sepio_status = null (Disabled)
  *   - sepio_enabled = true   →  sepio_status progresses through SepioStatus cases
  *
+ * The Sepio-enabled customers use the real `sepio_company_id` values that
+ * our testing environment has registered on the Sepio side. That way the
+ * frontend, status checks, and Sepio-side code paths can be exercised
+ * against the live integration using the same primary keys — but the
+ * auth token and encrypted credentials are intentionally left null
+ * (see notes below).
+ *
  * Insurance (IL) policy fields live on the customer now (moved from customer_wallets).
  *
  * Credentials for every customer_admin/ops user: password = "password"
+ *
+ * SECURITY NOTE: real `sepio_token` (JWT) and `sepio_credentials` (encrypted
+ * {email, password}) are NEVER hardcoded here. The local seeder sets these
+ * to null. Live credentials are loaded separately via LiveSepioSeeder
+ * (which reads database/o2o.sql — file not committed to the repo).
  */
 class CustomerSeeder extends Seeder
 {
@@ -206,7 +218,10 @@ class CustomerSeeder extends Seeder
                 'il_remarks' => 'GST certificate is blurry. Please re-upload a clear copy.',
             ],
 
-            // 4. IL Approved — Sepio registration started but still pending
+            // 4. IL Approved — Sepio registered, awaiting verification on the
+            // Sepio side. The live sepio_company_id (102869) is the same
+            // primary key registered on our testing environment so any
+            // Sepio-side debugging references the correct company.
             [
                 'first_name' => 'Sunita',
                 'last_name' => 'Rao',
@@ -216,8 +231,10 @@ class CustomerSeeder extends Seeder
                 'company_type' => CompanyType::PvtLtd,
                 'onboarding_status' => CustomerOnboardingStatus::IlApproved->value,
                 'sepio_enabled' => true,
-                'sepio_status' => 'pending',
-                'sepio_company_id' => 'SPC10042',
+                'sepio_status' => 'verification_pending',
+                'sepio_company_id' => '102869',
+                // sepio_token / sepio_credentials intentionally null — see
+                // SECURITY NOTE in the class docblock.
                 'gst_number' => '29AABCR5678C1Z3',
                 'iec_number' => 'IEC0001004',
                 'il_policy_number' => 'ILPOL-' . str_pad(10042, 5, '0', STR_PAD_LEFT),
@@ -254,7 +271,10 @@ class CustomerSeeder extends Seeder
                 'il_remarks' => 'Full verification passed.',
             ],
 
-            // 6. Completed (Sepio verified) — fully onboarded, Sepio ready — primary tenant for Sepio orders
+            // 6. Completed (Sepio registered) — fully onboarded, sepio
+            // company registered on the Sepio side, awaiting verification.
+            // The live sepio_company_id (102866) is the testing environment
+            // primary key.
             [
                 'first_name' => 'Meena',
                 'last_name' => 'Iyer',
@@ -264,9 +284,10 @@ class CustomerSeeder extends Seeder
                 'company_type' => CompanyType::PvtLtd,
                 'onboarding_status' => CustomerOnboardingStatus::Completed->value,
                 'sepio_enabled' => true,
-                'sepio_status' => 'verified',
-                'sepio_company_id' => 'SPC10099',
-                'sepio_token_expires_at' => now()->addDays(20),
+                'sepio_status' => 'verification_pending',
+                'sepio_company_id' => '102866',
+                // sepio_token / sepio_credentials intentionally null — see
+                // SECURITY NOTE in the class docblock.
                 'gst_number' => '33AABCI3456E1Z8',
                 'iec_number' => 'IEC0001006',
                 'il_policy_number' => 'ILPOL-' . str_pad(10099, 5, '0', STR_PAD_LEFT),
@@ -277,7 +298,7 @@ class CustomerSeeder extends Seeder
                 'billing_city' => 'Chennai',
                 'billing_state' => 'Tamil Nadu',
                 'billing_pincode' => '600002',
-                'il_remarks' => 'Documents and IEC verified. Sepio integration complete.',
+                'il_remarks' => 'Documents and IEC verified. Sepio registration in progress.',
             ],
         ];
     }

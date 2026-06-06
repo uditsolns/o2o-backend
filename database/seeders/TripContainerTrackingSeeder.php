@@ -99,7 +99,7 @@ class TripContainerTrackingSeeder extends Seeder
 
             // ── Draft-like "pre-departure" active trips ────────────────────
             TripStatus::Active => [
-                'mt_tracking_request_id' => 'KPLR-REQ-' . $cid . '-' . $tid,
+                'mt_tracking_request_id' => $this->mtTrackingRequestId($trip),
                 'mt_shipment_id' => null,
                 'tracking_status' => 'pending',
                 'transportation_status' => 'in_transit',
@@ -114,8 +114,8 @@ class TripContainerTrackingSeeder extends Seeder
             ],
 
             TripStatus::OutForDelivery => [
-                'mt_tracking_request_id' => 'KPLR-REQ-' . $cid . '-' . $tid,
-                'mt_shipment_id' => 'SHP-' . strtoupper(substr($trip->trip_ref, -4)) . '-' . $tid,
+                'mt_tracking_request_id' => $this->mtTrackingRequestId($trip),
+                'mt_shipment_id' => $this->mtShipmentId($trip),
                 'mt_vessel_ship_id' => $this->mtVesselShipId($trip),
                 'tracking_status' => 'active',
                 'transportation_status' => 'in_transit',
@@ -139,8 +139,8 @@ class TripContainerTrackingSeeder extends Seeder
             ],
 
             TripStatus::Delivered => [
-                'mt_tracking_request_id' => 'KPLR-REQ-' . $cid . '-' . $tid,
-                'mt_shipment_id' => 'SHP-' . strtoupper(substr($trip->trip_ref, -4)) . '-' . $tid,
+                'mt_tracking_request_id' => $this->mtTrackingRequestId($trip),
+                'mt_shipment_id' => $this->mtShipmentId($trip),
                 'mt_vessel_ship_id' => $this->mtVesselShipId($trip),
                 'tracking_status' => 'active',
                 'transportation_status' => 'arrived',
@@ -164,8 +164,8 @@ class TripContainerTrackingSeeder extends Seeder
             ],
 
             TripStatus::Completed => [
-                'mt_tracking_request_id' => 'KPLR-REQ-' . $cid . '-' . $tid,
-                'mt_shipment_id' => 'SHP-' . strtoupper(substr($trip->trip_ref, -4)) . '-' . $tid,
+                'mt_tracking_request_id' => $this->mtTrackingRequestId($trip),
+                'mt_shipment_id' => $this->mtShipmentId($trip),
                 'mt_vessel_ship_id' => $this->mtVesselShipId($trip),
                 'tracking_status' => 'active',
                 'transportation_status' => 'delivered',
@@ -256,5 +256,39 @@ class TripContainerTrackingSeeder extends Seeder
     {
         $hash = substr(md5($trip->trip_ref . $trip->carrier_scac), 0, 10);
         return 'MTSHIP-' . strtoupper($hash);
+    }
+
+    /**
+     * Kpler-style 26-character base32-ish tracking request id, deterministic
+     * per (customer_id, trip_id). Mirrors the production id shape so URLs
+     * like /tracking/{requestId} look right during local dev.
+     */
+    private function mtTrackingRequestId(Trip $trip): string
+    {
+        $hash = hash('sha256', $trip->customer_id . ':' . $trip->id . ':req');
+        return $this->kplerStyleId($hash);
+    }
+
+    /**
+     * Kpler-style 26-character shipment id, deterministic per (trip_id).
+     */
+    private function mtShipmentId(Trip $trip): string
+    {
+        $hash = hash('sha256', $trip->id . ':shipment');
+        return $this->kplerStyleId($hash);
+    }
+
+    /**
+     * Map a hex SHA into a 26-char [a-z0-9] id — same shape Kpler returns.
+     */
+    private function kplerStyleId(string $hash): string
+    {
+        $alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789';
+        $bytes = substr(hash('sha256', $hash), 0, 26);
+        $id = '';
+        for ($i = 0, $n = strlen($bytes); $i < $n; $i++) {
+            $id .= $alphabet[hexdec(substr($bytes, $i, 2)) % strlen($alphabet)];
+        }
+        return $id;
     }
 }

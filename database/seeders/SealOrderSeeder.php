@@ -69,6 +69,17 @@ class SealOrderSeeder extends Seeder
 
     // ── Order definitions ─────────────────────────────────────────────────────
 
+    /**
+     * Real Sepio order ids use a `SPPL\d{6}` shape (e.g. SPPL108745). The
+     * local seeder uses a stable per-customer-per-order pattern that
+     * produces realistic-looking identifiers without ever colliding with
+     * the live environment.
+     *
+     * Sepio billing/shipping address ids (`address00006662`) and the port
+     * codes (`INBOM1`, `INBOA6`, `INAN1`) on each order mirror what
+     * production data looks like, so the local frontend can be tested
+     * against URLs that look like the real thing.
+     */
     private function orderDefinitions(
         Customer $customer, User $user, User $admin,
                  $billingLoc, $shippingLoc,
@@ -133,7 +144,7 @@ class SealOrderSeeder extends Seeder
                 'il_approved_by' => $admin->id,
                 'il_approved_at' => now()->subDays(5),
                 'il_remarks' => 'Approved. Forwarded to Sepio.',
-                'sepio_order_id' => 'SEPIO-ORD-' . $cid . '-003',
+                'sepio_order_id' => 'SPPL' . str_pad(100000 + ($cid * 100) + 3, 6, '0', STR_PAD_LEFT),
                 'sepio_billing_address_id' => $billingLoc->sepio_billing_address_id,
                 'sepio_shipping_address_id' => $shippingLoc->sepio_shipping_address_id,
             ]),
@@ -146,7 +157,7 @@ class SealOrderSeeder extends Seeder
                 'status' => SealOrderStatus::MfgPending,
                 'il_approved_by' => $admin->id,
                 'il_approved_at' => now()->subDays(8),
-                'sepio_order_id' => 'SEPIO-ORD-' . $cid . '-004',
+                'sepio_order_id' => 'SPPL' . str_pad(100000 + ($cid * 100) + 4, 6, '0', STR_PAD_LEFT),
                 'sepio_billing_address_id' => $billingLoc->sepio_billing_address_id,
                 'sepio_shipping_address_id' => $shippingLoc->sepio_shipping_address_id,
             ]),
@@ -159,7 +170,7 @@ class SealOrderSeeder extends Seeder
                 'status' => SealOrderStatus::InTransit,
                 'il_approved_by' => $admin->id,
                 'il_approved_at' => now()->subDays(12),
-                'sepio_order_id' => 'SEPIO-ORD-' . $cid . '-005',
+                'sepio_order_id' => 'SPPL' . str_pad(100000 + ($cid * 100) + 5, 6, '0', STR_PAD_LEFT),
                 'sepio_billing_address_id' => $billingLoc->sepio_billing_address_id,
                 'sepio_shipping_address_id' => $shippingLoc->sepio_shipping_address_id,
                 'courier_name' => 'Blue Dart',
@@ -175,7 +186,7 @@ class SealOrderSeeder extends Seeder
                 'status' => SealOrderStatus::Completed,
                 'il_approved_by' => $admin->id,
                 'il_approved_at' => now()->subDays(20),
-                'sepio_order_id' => 'SEPIO-ORD-' . $cid . '-006',
+                'sepio_order_id' => 'SPPL' . str_pad(100000 + ($cid * 100) + 6, 6, '0', STR_PAD_LEFT),
                 'sepio_billing_address_id' => $billingLoc->sepio_billing_address_id,
                 'sepio_shipping_address_id' => $shippingLoc->sepio_shipping_address_id,
                 'courier_name' => 'DTDC',
@@ -203,7 +214,7 @@ class SealOrderSeeder extends Seeder
                 'status' => SealOrderStatus::OrderPlaced,
                 'il_approved_by' => $admin->id,
                 'il_approved_at' => now()->subDays(9),
-                'sepio_order_id' => 'SEPIO-ORD-' . $cid . '-008',
+                'sepio_order_id' => 'SPPL' . str_pad(100000 + ($cid * 100) + 8, 6, '0', STR_PAD_LEFT),
                 'sepio_billing_address_id' => $billingLoc->sepio_billing_address_id,
                 'sepio_shipping_address_id' => $shippingLoc->sepio_shipping_address_id,
             ]),
@@ -216,7 +227,7 @@ class SealOrderSeeder extends Seeder
                 'status' => SealOrderStatus::InProgress,
                 'il_approved_by' => $admin->id,
                 'il_approved_at' => now()->subDays(11),
-                'sepio_order_id' => 'SEPIO-ORD-' . $cid . '-009',
+                'sepio_order_id' => 'SPPL' . str_pad(100000 + ($cid * 100) + 9, 6, '0', STR_PAD_LEFT),
                 'sepio_billing_address_id' => $billingLoc->sepio_billing_address_id,
                 'sepio_shipping_address_id' => $shippingLoc->sepio_shipping_address_id,
             ]),
@@ -229,7 +240,7 @@ class SealOrderSeeder extends Seeder
                 'status' => SealOrderStatus::MfgCompleted,
                 'il_approved_by' => $admin->id,
                 'il_approved_at' => now()->subDays(18),
-                'sepio_order_id' => 'SEPIO-ORD-' . $cid . '-010',
+                'sepio_order_id' => 'SPPL' . str_pad(100000 + ($cid * 100) + 10, 6, '0', STR_PAD_LEFT),
                 'sepio_billing_address_id' => $billingLoc->sepio_billing_address_id,
                 'sepio_shipping_address_id' => $shippingLoc->sepio_shipping_address_id,
             ]),
@@ -243,7 +254,7 @@ class SealOrderSeeder extends Seeder
                 'il_approved_by' => $admin->id,
                 'il_approved_at' => now()->subDays(14),
                 'il_remarks' => 'Sepio rejected: invalid port codes submitted.',
-                'sepio_order_id' => 'SEPIO-ORD-' . $cid . '-011',
+                'sepio_order_id' => 'SPPL' . str_pad(100000 + ($cid * 100) + 11, 6, '0', STR_PAD_LEFT),
                 'sepio_billing_address_id' => $billingLoc->sepio_billing_address_id,
                 'sepio_shipping_address_id' => $shippingLoc->sepio_shipping_address_id,
             ]),

@@ -22,3 +22,10 @@
 Homestead.json
 Homestead.yaml
 Thumbs.db
+
+# Live Sepio testing-environment data. The operator drops this file into
+# the project root before running LiveSepioSeeder and removes it after —
+# it contains real Sepio JWTs and encrypted credentials, so it must not
+# be committed.
+/database/o2o.sql
+/database/o2o.local.sql
