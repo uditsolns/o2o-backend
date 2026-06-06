@@ -471,11 +471,23 @@ class TripTrackingPointSeeder extends Seeder
     private function buildRoadPoints(array $waypoints, Carbon $startTime, float $hoursPerLeg): array
     {
         $points = [];
+
+        // Interpolate intermediate GPS pings between waypoints so zoom decimation
+        // is testable. ~30 pings per 4-hour highway leg (~8 min intervals).
+        $gpsPingsPerLeg = (int) max(20, (int) ($hoursPerLeg * 8)); // ~30 for 4h leg, ~8 for 1h leg
+
         foreach ($waypoints as $i => $wp) {
-            $recordedAt = (clone $startTime)->addHours($i * $hoursPerLeg);
+            $legStartAt = (clone $startTime)->addHours($i * $hoursPerLeg);
+
+            // Interpolate driver_mobile GPS pings between this waypoint and the next
+            if ($i < count($waypoints) - 1) {
+                $nextWp = $waypoints[$i + 1];
+                $this->interpolateRoadLeg($points, $wp, $nextWp, $legStartAt, $hoursPerLeg, $gpsPingsPerLeg);
+            }
 
             if ($wp['toll']) {
-                // FastTag event at toll
+                // FastTag checkpoint event — one record at the toll location
+                $tollAt = (clone $startTime)->addHours(($i + 1) * $hoursPerLeg);
                 $points[] = [
                     'source' => 'fast_tag',
                     'lat' => $wp['lat'] + (rand(-5, 5) / 10000),
@@ -485,59 +497,108 @@ class TripTrackingPointSeeder extends Seeder
                     'accuracy' => null,
                     'location_name' => $wp['name'],
                     'external_id' => 'FT' . substr(md5($wp['name'] . $startTime->timestamp . $i), 0, 12),
-                    'recorded_at' => $recordedAt,
+                    'recorded_at' => $tollAt,
                 ];
+            }
+        }
 
-                // GPS mobile ping shortly after toll
-                $points[] = [
-                    'source' => 'driver_mobile',
-                    'lat' => $wp['lat'] + (rand(-20, 20) / 10000),
-                    'lng' => $wp['lng'] + (rand(-20, 20) / 10000),
-                    'speed' => rand(50, 85),
-                    'heading' => $this->bearingToNext($waypoints, $i),
-                    'accuracy' => rand(5, 25),
-                    'location_name' => null,
-                    'external_id' => null,
-                    'recorded_at' => (clone $recordedAt)->addMinutes(rand(5, 20)),
-                ];
-            } else {
-                // Regular GPS ping at dispatch/delivery
-                $points[] = [
-                    'source' => 'driver_mobile',
-                    'lat' => $wp['lat'],
-                    'lng' => $wp['lng'],
-                    'speed' => $i === 0 ? 0 : rand(0, 20), // starting or stopped
-                    'heading' => $this->bearingToNext($waypoints, $i),
-                    'accuracy' => rand(5, 15),
-                    'location_name' => $wp['name'],
-                    'external_id' => null,
-                    'recorded_at' => $recordedAt,
-                ];
+        // Sort by recorded_at
+        usort($points, fn($a, $b) => $a['recorded_at'] <=> $b['recorded_at']);
+
+        return $points;
+    }
+
+    /**
+     * Linearly interpolate lat/lng between two waypoints and emit GPS pings.
+     * Adds jitter to simulate real GPS drift on a highway.
+     */
+    private function interpolateRoadLeg(array &$points, array $from, array $to, Carbon $legStart, float $hoursPerLeg, int $count): void
+    {
+        $bearing = $this->bearingToNext([$from, $to], 0);
+        $avgSpeed = rand(55, 80); // km/h realistic highway cruising speed
+
+        for ($j = 1; $j <= $count; $j++) {
+            $frac = $j / ($count + 1);
+            $recordedAt = (clone $legStart)->addSeconds((int) ($frac * $hoursPerLeg * 3600));
+
+            // Linear lat/lng interpolation with slight perpendicular jitter
+            $lat = $from['lat'] + ($to['lat'] - $from['lat']) * $frac;
+            $lng = $from['lng'] + ($to['lng'] - $from['lng']) * $frac;
+
+            // Add small random offset to simulate GPS drift
+            $lat += (rand(-8, 8) / 100000);
+            $lng += (rand(-8, 8) / 100000);
+
+            $points[] = [
+                'source' => 'driver_mobile',
+                'lat' => round($lat, 6),
+                'lng' => round($lng, 6),
+                'speed' => $avgSpeed + rand(-10, 10),
+                'heading' => $bearing,
+                'accuracy' => rand(5, 20),
+                'location_name' => null,
+                'external_id' => null,
+                'recorded_at' => $recordedAt,
+            ];
+        }
+    }
+
+    private function buildSeaPoints(array $waypoints, Carbon $startTime, float $daysPerLeg): array
+    {
+        $points = [];
+        // ~24 AIS pings per day of sea travel — simulates position reporting every ~60 min
+        $pingsPerDay = 24;
+
+        foreach ($waypoints as $i => $wp) {
+            $legStartAt = (clone $startTime)->addHours((int)($i * $daysPerLeg * 24));
+
+            // Interpolate AIS pings between this waypoint and the next
+            if ($i < count($waypoints) - 1) {
+                $nextWp = $waypoints[$i + 1];
+                $this->interpolateSeaLeg($points, $wp, $nextWp, $legStartAt, $daysPerLeg, (int) ($daysPerLeg * $pingsPerDay));
             }
         }
 
         return $points;
     }
 
-    private function buildSeaPoints(array $waypoints, Carbon $startTime, float $daysPerLeg): array
+    /**
+     * Interpolate AIS pings along a sea leg with slight course drift.
+     */
+    private function interpolateSeaLeg(array &$points, array $from, array $to, Carbon $legStart, float $daysPerLeg, int $count): void
     {
-        $points = [];
-        foreach ($waypoints as $i => $wp) {
-            $recordedAt = (clone $startTime)->addHours((int)($i * $daysPerLeg * 24));
+        $bearing = $this->bearingToNext([$from, $to], 0);
+        $avgSpeedKnots = rand(140, 220) / 10; // 14–22 knots
+
+        for ($j = 1; $j <= $count; $j++) {
+            $frac = $j / ($count + 1);
+            $recordedAt = (clone $legStart)->addSeconds((int) ($frac * $daysPerLeg * 86400));
+
+            // Linear interpolation with oceanic drift (small perpendicular offset)
+            $lat = $from['lat'] + ($to['lat'] - $from['lat']) * $frac;
+            $lng = $from['lng'] + ($to['lng'] - $from['lng']) * $frac;
+
+            // Perpendicular drift — vessels rarely sail perfectly straight
+            $perpBearing = ($bearing + 90) % 360;
+            $drift = (rand(-5, 5) / 1000); // ~0.005° max drift (~500m)
+            $lat += $drift * cos(deg2rad($perpBearing));
+            $lng += $drift * sin(deg2rad($perpBearing));
+
+            // Speed in knots — slightly vary around the average
+            $speed = $avgSpeedKnots + rand(-15, 15) / 10;
+
             $points[] = [
                 'source' => 'vessel_ais',
-                'lat' => $wp['lat'] + (rand(-30, 30) / 1000),
-                'lng' => $wp['lng'] + (rand(-30, 30) / 1000),
-                'speed' => rand(140, 220) / 10, // 14–22 knots
-                'heading' => $this->bearingToNext($waypoints, $i),
+                'lat' => round($lat, 5),
+                'lng' => round($lng, 5),
+                'speed' => round($speed, 1),
+                'heading' => $bearing + rand(-5, 5),
                 'accuracy' => null,
-                'location_name' => $wp['label'] ?? null,
+                'location_name' => $from['label'] ?? null,
                 'external_id' => null,
                 'recorded_at' => $recordedAt,
             ];
         }
-
-        return $points;
     }
 
     private function bearingToNext(array $waypoints, int $index): int

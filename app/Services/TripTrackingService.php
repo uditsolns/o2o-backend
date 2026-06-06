@@ -8,6 +8,10 @@ use App\Enums\TripTransportationMode;
 use App\Events\VehicleArrivedAtDestination;
 use App\Models\Trip;
 use App\Models\TripTrackingPoint;
+use App\Support\GooglePolyline;
+use App\Support\LttbDownsampler;
+use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class TripTrackingService
@@ -211,5 +215,205 @@ class TripTrackingService
         $a = sin($Δφ / 2) ** 2 + cos($φ1) * cos($φ2) * sin($Δλ / 2) ** 2;
 
         return $R * 2 * atan2(sqrt($a), sqrt(1 - $a));
+    }
+
+    // ── Read-side: summary + decimate/encode ─────────────────────────────────────
+
+    /**
+     * Aggregate summary of all tracking points for a trip.
+     *
+     * @return array{start:Carbon|null, end:Carbon|null, duration_seconds:int,
+     *              total_points:int, total_distance_meters:float,
+     *              max_speed_kph:float|null, sources:array<string,int>}
+     */
+    public function summarize(Trip $trip): array
+    {
+        $agg = TripTrackingPoint::where('trip_id', $trip->id)
+            ->selectRaw('
+                MIN(recorded_at)            AS start_ts,
+                MAX(recorded_at)            AS end_ts,
+                COUNT(*)                    AS total_points,
+                COALESCE(MAX(speed), 0)     AS max_speed
+            ')
+            ->first();
+
+        $totalPoints = (int) ($agg->total_points ?? 0);
+
+        // Source breakdown
+        $sources = [];
+        if ($totalPoints > 0) {
+            $rows = TripTrackingPoint::where('trip_id', $trip->id)
+                ->select('source')
+                ->selectRaw('COUNT(*) AS cnt')
+                ->groupBy('source')
+                ->get();
+
+            foreach ($rows as $row) {
+                $src = $row->source instanceof \BackedEnum
+                    ? $row->source->value
+                    : (string) $row->source;
+                $sources[$src] = (int) $row->cnt;
+            }
+        }
+
+        // Haversine total distance -- one lazy pass
+        $totalDistance = 0.0;
+        if ($totalPoints >= 2) {
+            $prevLat = null;
+            $prevLng = null;
+
+            TripTrackingPoint::where('trip_id', $trip->id)
+                ->whereNotNull('lat')->whereNotNull('lng')
+                ->orderBy('recorded_at')
+                ->lazyById(500, 'id')
+                ->each(function (TripTrackingPoint $pt) use (&$totalDistance, &$prevLat, &$prevLng) {
+                    if ($prevLat !== null) {
+                        $totalDistance += $this->haversineMeters(
+                            $prevLat, $prevLng, (float) $pt->lat, (float) $pt->lng
+                        );
+                    }
+                    $prevLat = (float) $pt->lat;
+                    $prevLng = (float) $pt->lng;
+                });
+        }
+
+        $startTs = $agg->start_ts ? Carbon::parse($agg->start_ts)->setTimezone('UTC') : null;
+        $endTs   = $agg->end_ts   ? Carbon::parse($agg->end_ts)->setTimezone('UTC')   : null;
+        $duration = ($startTs && $endTs) ? (int) abs($startTs->diffInSeconds($endTs)) : 0;
+
+        return [
+            'start'                => $startTs,
+            'end'                  => $endTs,
+            'duration_seconds'     => $duration,
+            'total_points'         => $totalPoints,
+            'total_distance_meters' => round($totalDistance, 1),
+            'max_speed_kph'        => $agg->max_speed
+                ? round((float) $agg->max_speed, 1) : null,
+            'sources'              => $sources,
+        ];
+    }
+
+    /**
+     * LTTB downsample then Google-polyline encode.
+     *
+     * For continuous sources (gps, driver_mobile, vessel_ais, etc.):
+     *   decimate with LTTB, encode as polyline, render_as = "line"
+     * For checkpoint sources (fast_tag):
+     *   return raw lat/lng/recorded_at points, render_as = "markers"
+     *
+     * @param  Trip  $trip
+     * @param  int  $targetPoints  Default 500. Clamped to >= 3.
+     * @return array{polyline:string, points_in_polyline:int,
+     *              timestamps:array<string>, bbox:array, segments:array}
+     */
+    public function decimate(Trip $trip, int $targetPoints = 500): array
+    {
+        if ($targetPoints < 3) {
+            $targetPoints = 3;
+        }
+
+        $rows = TripTrackingPoint::where('trip_id', $trip->id)
+            ->whereNotNull('lat')->whereNotNull('lng')
+            ->orderBy('recorded_at')
+            ->get(['recorded_at', 'source', 'lat', 'lng', 'location_name']);
+
+        if ($rows->isEmpty()) {
+            return [
+                'polyline'           => '',
+                'points_in_polyline' => 0,
+                'timestamps'         => [],
+                'bbox'               => [[0.0, 0.0], [0.0, 0.0]],
+                'segments'           => [],
+            ];
+        }
+
+        // Normalize sources and group
+        $markerSources = TripSegmentTrackingSource::markerSources();
+
+        $points = $rows->map(fn($pt) => [
+            'recorded_at'   => $pt->recorded_at,
+            'source'        => $pt->source instanceof \BackedEnum
+                ? $pt->source->value
+                : (string) $pt->source,
+            'lat'           => $pt->lat,
+            'lng'           => $pt->lng,
+            'location_name' => $pt->location_name,
+        ])->all();
+
+        // LTTB on all points — produces the full mixed-source track polyline
+        $sampler = new LttbDownsampler();
+        $dec     = $sampler->downsample($points, $targetPoints);
+
+        $encoder = new GooglePolyline();
+        $pairs   = array_map(fn($p) => [$p['lat'], $p['lng']], $dec);
+        $polyline = $encoder->encode($pairs);
+
+        $timestamps = array_map(
+            fn($p) => $p['recorded_at'] instanceof Carbon
+                ? $p['recorded_at']->toIso8601String()
+                : (string) $p['recorded_at'],
+            $dec
+        );
+
+        $lats = array_column($dec, 'lat');
+        $lngs = array_column($dec, 'lng');
+        $bbox = [
+            [(float) min($lats), (float) min($lngs)],
+            [(float) max($lats), (float) max($lngs)],
+        ];
+
+        // Per-source segments — split decimated track by source for line sources,
+        // return raw (undecimated) checkpoint points for marker sources.
+        $bySource = [];
+        foreach ($dec as $pt) {
+            $bySource[$pt['source']][] = $pt;
+        }
+
+        // Also collect raw (undecimated) marker-source points from the full $points array
+        $rawBySource = [];
+        foreach ($points as $pt) {
+            $rawBySource[$pt['source']][] = $pt;
+        }
+
+        $segments = [];
+        foreach ($bySource as $src => $srcPoints) {
+            $isMarker = in_array($src, $markerSources, true);
+
+            if ($isMarker) {
+                // Marker sources — return raw checkpoint positions (every event matters,
+                // no decimation). Each marker has lat/lng/recorded_at/location_name
+                // for tooltip display on hover.
+                $markers = array_map(fn($p) => [
+                    'lat'           => $p['lat'],
+                    'lng'           => $p['lng'],
+                    'recorded_at'   => $p['recorded_at'] instanceof Carbon
+                        ? $p['recorded_at']->toIso8601String()
+                        : (string) $p['recorded_at'],
+                    'location_name' => $p['location_name'] ?: null,
+                ], $rawBySource[$src] ?? []);
+
+                $segments[$src] = [
+                    'render_as' => 'markers',
+                    'markers'   => $markers,
+                    'points'    => count($markers),
+                ];
+            } else {
+                // Line sources — encode decimated polyline per source
+                $srcPairs   = array_map(fn($p) => [$p['lat'], $p['lng']], $srcPoints);
+                $segments[$src] = [
+                    'render_as' => 'line',
+                    'polyline'  => $encoder->encode($srcPairs),
+                    'points'    => count($srcPoints),
+                ];
+            }
+        }
+
+        return [
+            'polyline'           => $polyline,
+            'points_in_polyline' => count($dec),
+            'timestamps'         => $timestamps,
+            'bbox'               => $bbox,
+            'segments'           => $segments,
+        ];
     }
 }

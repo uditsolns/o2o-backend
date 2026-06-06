@@ -244,7 +244,7 @@ class TripController extends Controller
 
         $trip->load([
             'customer', 'seal', 'seal.statusLogs', 'segments',
-            'trackingPoints', 'containerTracking', 'shipmentMilestones',
+            'containerTracking', 'shipmentMilestones',
             'events', 'documents', 'documents.uploadedBy'
         ]);
 

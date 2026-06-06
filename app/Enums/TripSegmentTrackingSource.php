@@ -12,6 +12,12 @@ enum TripSegmentTrackingSource: string
     case FastTag = 'fast_tag';
     case VesselAis = 'vessel_ais';
 
+    /** Sources that are checkpoint events — rendered as markers, not a connected line. */
+    public static function markerSources(): array
+    {
+        return [self::FastTag->value];
+    }
+
     public static function values(): array
     {
         return array_column(self::cases(), 'value');

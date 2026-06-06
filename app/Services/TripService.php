@@ -18,7 +18,7 @@ use App\Models\TripSegment;
 use App\Models\Trip;
 use App\Models\User;
 use App\Services\Sepio\SepioSealService;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 readonly class TripService
@@ -282,6 +282,18 @@ readonly class TripService
 
             if ($trip->seal) {
                 $trip->seal->update(['status' => SealStatus::Used]);
+            }
+
+            // Terminal lifecycle — ensure any remaining trip data is promoted to a route.
+            // This is a catch-all: if Sepio/Kpler hasn't fired yet (e.g. road trip),
+            // the trip fields are frozen here and we capture the lane snapshot now.
+            try {
+                $this->routeService->promoteFromTrip($trip->fresh());
+            } catch (\Throwable $e) {
+                Log::warning('TripService: route promotion failed on confirmEpod', [
+                    'trip_id' => $trip->id,
+                    'error'   => $e->getMessage(),
+                ]);
             }
 
             $this->eventService->log(

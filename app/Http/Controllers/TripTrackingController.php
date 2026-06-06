@@ -10,7 +10,6 @@ use App\Models\Trip;
 use App\Services\TripTrackingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
 class TripTrackingController extends Controller
 {
@@ -20,20 +19,86 @@ class TripTrackingController extends Controller
 
     /**
      * GET /trips/{trip}/tracking
-     * Return paginated tracking history for a trip.
+     *
+     * Default (detail=summary): downsampled Google-encoded polyline + summary stats.
+     * Designed for both mobile and web — ~3 KB for a 14 000-point trip.
+     *
+     * ?detail=raw: paginated raw points via cursor pagination (forensic/timeline).
+     *
+     * Query params:
+     *   detail   summary|raw  (default: summary)
+     *   cursor               base64 cursor for raw pagination
+     *   limit                page size for raw (default 1000, max 2000)
+     *   source               filter by source (e.g. vessel_ais)
+     *   from, to             time window (ISO 8601)
+     *   zoom                 map zoom 1-20 — adaptive polyline density
      */
-    public function history(Request $request, Trip $trip): AnonymousResourceCollection
+    public function history(Request $request, Trip $trip): JsonResponse
     {
         $this->authorize('view', $trip);
 
-        $points = $trip->trackingPoints()
-            ->when($request->query('source'), fn($q, $v) => $q->where('source', $v))
-            ->when($request->query('from'), fn($q, $v) => $q->where('recorded_at', '>=', $v))
-            ->when($request->query('to'), fn($q, $v) => $q->where('recorded_at', '<=', $v))
-            ->orderBy('recorded_at')
-            ->get();
+        if ($request->query('detail') === 'raw') {
+            return $this->historyRaw($request, $trip);
+        }
 
-        return TripTrackingPointResource::collection($points);
+        return $this->historySummary($request, $trip);
+    }
+
+    private function historySummary(Request $request, Trip $trip): JsonResponse
+    {
+        $zoom   = (int) $request->query('zoom', 10);
+        $target = match (true) {
+            $zoom <= 4  => 100,
+            $zoom <= 8  => 250,
+            $zoom <= 12 => 500,
+            default     => 1000,
+        };
+
+        $summary  = $this->trackingService->summarize($trip);
+        $polyData = $this->trackingService->decimate($trip, $target);
+
+        return response()->json([
+            'summary'            => $summary,
+            'polyline'           => $polyData['polyline'],
+            'timestamps'         => $polyData['timestamps'],
+            'points_in_polyline' => $polyData['points_in_polyline'],
+            'bbox'               => $polyData['bbox'],
+            'segments'           => $polyData['segments'],
+            'data'               => [],   // empty for map view; backward-compat
+        ]);
+    }
+
+    private function historyRaw(Request $request, Trip $trip): JsonResponse
+    {
+        $limit    = min((int) $request->query('limit', 1000), 2000);
+        $summary  = $this->trackingService->summarize($trip);
+        $paginated = $trip->trackingPoints()
+            ->when($request->query('source'), fn($q, $v) => $q->where('source', $v))
+            ->when($request->query('from'),   fn($q, $v) => $q->where('recorded_at', '>=', $v))
+            ->when($request->query('to'),      fn($q, $v) => $q->where('recorded_at', '<=', $v))
+            ->orderBy('recorded_at')
+            ->cursorPaginate($limit);
+
+        $polyData = $this->trackingService->decimate($trip, 100);
+
+        return response()->json([
+            'summary'            => $summary,
+            'polyline'           => $polyData['polyline'],
+            'timestamps'         => $polyData['timestamps'],
+            'points_in_polyline' => $polyData['points_in_polyline'],
+            'bbox'               => $polyData['bbox'],
+            'segments'           => $polyData['segments'],
+            'data'               => TripTrackingPointResource::collection($paginated->items()),
+            'links'              => [
+                'next' => $paginated->nextPageUrl(),
+                'prev' => $paginated->previousPageUrl(),
+            ],
+            'meta'               => [
+                'has_more'    => $paginated->hasMorePages(),
+                'per_page'    => $paginated->perPage(),
+                'total_points' => $summary['total_points'],
+            ],
+        ]);
     }
 
     /**

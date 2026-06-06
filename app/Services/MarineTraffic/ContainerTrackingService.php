@@ -9,6 +9,7 @@ use App\Models\TripContainerTracking;
 use App\Models\TripEvent;
 use App\Models\TripShipmentMilestone;
 use App\Jobs\SyncContainerMilestonesJob;
+use App\Services\RouteService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -16,6 +17,10 @@ use Illuminate\Support\Facades\Log;
 
 class ContainerTrackingService
 {
+    public function __construct(private readonly RouteService $routeService)
+    {
+    }
+
     private function http()
     {
         return Http::baseUrl(config('marinetraffic.container_base_url'))
@@ -351,6 +356,16 @@ class ContainerTrackingService
         if (!empty($tripUpdates)) {
             $trip->updateQuietly($tripUpdates);
             $trip = $trip->fresh();
+        }
+
+        // Re-check route completion now that Kpler may have backfilled ports
+        try {
+            $this->routeService->promoteFromTrip($trip);
+        } catch (\Throwable $e) {
+            Log::warning('ContainerTrackingService: route promotion failed', [
+                'trip_id' => $trip->id,
+                'error'   => $e->getMessage(),
+            ]);
         }
 
         // Transportation status → TripStatus advancement

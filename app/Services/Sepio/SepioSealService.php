@@ -7,12 +7,15 @@ use App\Exceptions\SepioException;
 use App\Models\Customer;
 use App\Models\Seal;
 use App\Models\Trip;
+use App\Services\RouteService;
 use Illuminate\Support\Facades\Log;
 
 readonly class SepioSealService
 {
-    public function __construct(private SepioClient $client)
-    {
+    public function __construct(
+        private SepioClient $client,
+        private RouteService $routeService,
+    ) {
     }
 
     /**
@@ -137,6 +140,16 @@ readonly class SepioSealService
             'trip_id' => $trip->id,
             'seal_number' => $seal->seal_number,
         ]);
+
+        // Promote trip to a lane — best effort; don't break the install flow.
+        try {
+            $this->routeService->promoteFromTrip($trip->fresh());
+        } catch (\Throwable $e) {
+            Log::warning('SepioSealService: route promotion failed', [
+                'trip_id' => $trip->id,
+                'error'   => $e->getMessage(),
+            ]);
+        }
 
         return true;
     }
