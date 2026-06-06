@@ -435,8 +435,18 @@ readonly class TripService
 
     private function generateTripRef(): string
     {
-        $last = Trip::lockForUpdate()->latest('id')->value('trip_ref');
-        $next = $last ? (int)substr($last, 2) + 1 : 1;
+        // Trip carries a TenantScope, so a raw query would only see refs that
+        // belong to the current tenant — leading to identical refs across
+        // tenants (e.g. TR0000001 issued twice). Pull the last ref globally,
+        // matching only the auto-numbered `TR\d{7}` format so legacy custom
+        // refs like `TR_II_T01` don't poison the counter.
+        $last = Trip::withoutGlobalScopes()
+            ->where('trip_ref', 'REGEXP', '^TR[0-9]{7}$')
+            ->lockForUpdate()
+            ->orderByDesc('id')
+            ->value('trip_ref');
+
+        $next = $last ? (int) substr($last, 2) + 1 : 1;
         return 'TR' . str_pad($next, 7, '0', STR_PAD_LEFT);
     }
 }

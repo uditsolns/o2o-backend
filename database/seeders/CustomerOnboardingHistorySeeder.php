@@ -86,7 +86,7 @@ class CustomerOnboardingHistorySeeder extends Seeder
                 [
                     'from_status' => null,
                     'to_status' => CustomerOnboardingStatus::Pending->value,
-                    'actor_type' => 'customer',
+                    'actor_type' => 'user',
                     'actor_id' => $customerActorId,
                     'remarks' => 'Customer self-registered. Awaiting profile completion.',
                     'created_at' => $createdAt,
@@ -97,7 +97,7 @@ class CustomerOnboardingHistorySeeder extends Seeder
                 [
                     'from_status' => null,
                     'to_status' => CustomerOnboardingStatus::Pending->value,
-                    'actor_type' => 'customer',
+                    'actor_type' => 'user',
                     'actor_id' => $customerActorId,
                     'remarks' => 'Customer self-registered.',
                     'created_at' => $createdAt,
@@ -105,7 +105,7 @@ class CustomerOnboardingHistorySeeder extends Seeder
                 [
                     'from_status' => CustomerOnboardingStatus::Pending->value,
                     'to_status' => CustomerOnboardingStatus::Submitted->value,
-                    'actor_type' => 'customer',
+                    'actor_type' => 'user',
                     'actor_id' => $customerActorId,
                     'remarks' => 'Customer submitted onboarding for review.',
                     'created_at' => $t1,
@@ -113,28 +113,28 @@ class CustomerOnboardingHistorySeeder extends Seeder
             ],
 
             CustomerOnboardingStatus::IlParked->value => [
-                $this->row(null, CustomerOnboardingStatus::Pending->value, 'customer', $customerActorId, 'Customer self-registered.', $createdAt),
-                $this->row(CustomerOnboardingStatus::Pending->value, CustomerOnboardingStatus::Submitted->value, 'customer', $customerActorId, 'Customer submitted onboarding for review.', $t1),
-                $this->row(CustomerOnboardingStatus::Submitted->value, CustomerOnboardingStatus::IlParked->value, 'platform', $ilActorId, $customer->il_remarks ?: 'Parked pending additional documents.', $t2, $customer->il_remarks_file_url),
+                $this->row(null, CustomerOnboardingStatus::Pending->value, 'user', $customerActorId, 'Customer self-registered.', $createdAt),
+                $this->row(CustomerOnboardingStatus::Pending->value, CustomerOnboardingStatus::Submitted->value, 'user', $customerActorId, 'Customer submitted onboarding for review.', $t1),
+                $this->row(CustomerOnboardingStatus::Submitted->value, CustomerOnboardingStatus::IlParked->value, 'user', $ilActorId, $customer->il_remarks ?: 'Parked pending additional documents.', $t2, $customer->il_remarks_file_url),
             ],
 
             CustomerOnboardingStatus::IlApproved->value => [
-                $this->row(null, CustomerOnboardingStatus::Pending->value, 'customer', $customerActorId, 'Customer self-registered.', $createdAt),
-                $this->row(CustomerOnboardingStatus::Pending->value, CustomerOnboardingStatus::Submitted->value, 'customer', $customerActorId, 'Customer submitted onboarding for review.', $t1),
-                $this->row(CustomerOnboardingStatus::Submitted->value, CustomerOnboardingStatus::IlApproved->value, 'platform', $ilActorId, $customer->il_remarks ?: 'All documents verified. Approved.', $t2, $customer->il_remarks_file_url),
+                $this->row(null, CustomerOnboardingStatus::Pending->value, 'user', $customerActorId, 'Customer self-registered.', $createdAt),
+                $this->row(CustomerOnboardingStatus::Pending->value, CustomerOnboardingStatus::Submitted->value, 'user', $customerActorId, 'Customer submitted onboarding for review.', $t1),
+                $this->row(CustomerOnboardingStatus::Submitted->value, CustomerOnboardingStatus::IlApproved->value, 'user', $ilActorId, $customer->il_remarks ?: 'All documents verified. Approved.', $t2, $customer->il_remarks_file_url),
             ],
 
             CustomerOnboardingStatus::IlRejected->value => [
-                $this->row(null, CustomerOnboardingStatus::Pending->value, 'customer', $customerActorId, 'Customer self-registered.', $createdAt),
-                $this->row(CustomerOnboardingStatus::Pending->value, CustomerOnboardingStatus::Submitted->value, 'customer', $customerActorId, 'Customer submitted onboarding for review.', $t1),
-                $this->row(CustomerOnboardingStatus::Submitted->value, CustomerOnboardingStatus::IlRejected->value, 'platform', $ilActorId, $customer->il_remarks ?: 'Documentation insufficient.', $t2, $customer->il_remarks_file_url),
+                $this->row(null, CustomerOnboardingStatus::Pending->value, 'user', $customerActorId, 'Customer self-registered.', $createdAt),
+                $this->row(CustomerOnboardingStatus::Pending->value, CustomerOnboardingStatus::Submitted->value, 'user', $customerActorId, 'Customer submitted onboarding for review.', $t1),
+                $this->row(CustomerOnboardingStatus::Submitted->value, CustomerOnboardingStatus::IlRejected->value, 'user', $ilActorId, $customer->il_remarks ?: 'Documentation insufficient.', $t2, $customer->il_remarks_file_url),
             ],
 
             CustomerOnboardingStatus::Completed->value => [
-                $this->row(null, CustomerOnboardingStatus::Pending->value, 'customer', $customerActorId, 'Customer self-registered.', $createdAt),
-                $this->row(CustomerOnboardingStatus::Pending->value, CustomerOnboardingStatus::Submitted->value, 'customer', $customerActorId, 'Customer submitted onboarding for review.', $t1),
-                $this->row(CustomerOnboardingStatus::Submitted->value, CustomerOnboardingStatus::IlApproved->value, 'platform', $ilActorId, $customer->il_remarks ?: 'All documents verified. Approved.', $t2, $customer->il_remarks_file_url),
-                $this->row(CustomerOnboardingStatus::IlApproved->value, CustomerOnboardingStatus::Completed->value, 'platform', $ilActorId, 'Onboarding completed. Wallet, ports, and routes provisioned.', $t3),
+                $this->row(null, CustomerOnboardingStatus::Pending->value, 'user', $customerActorId, 'Customer self-registered.', $createdAt),
+                $this->row(CustomerOnboardingStatus::Pending->value, CustomerOnboardingStatus::Submitted->value, 'user', $customerActorId, 'Customer submitted onboarding for review.', $t1),
+                $this->row(CustomerOnboardingStatus::Submitted->value, CustomerOnboardingStatus::IlApproved->value, 'user', $ilActorId, $customer->il_remarks ?: 'All documents verified. Approved.', $t2, $customer->il_remarks_file_url),
+                $this->row(CustomerOnboardingStatus::IlApproved->value, CustomerOnboardingStatus::Completed->value, 'user', $ilActorId, 'Onboarding completed. Wallet, ports, and routes provisioned.', $t3),
             ],
 
             default => [],

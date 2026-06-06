@@ -99,7 +99,14 @@ class SealOrderController extends Controller
     {
         $this->authorize('view', $order);
 
-        return response()->json($order->history()->paginate(20));
+        $history = $order->history()
+            ->with('actor:id,name,customer_id')
+            ->paginate(20);
+
+        return response()->json(
+            \App\Http\Resources\HistoryEntryResource::collection($history)
+                ->response()->getData(true)
+        );
     }
 
     public function markCashPaymentReceived(ConfirmCashPaymentRequest $request, SealOrder $order): JsonResponse

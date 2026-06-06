@@ -142,8 +142,13 @@ class CustomerController extends Controller
     {
         $this->authorize('view', $customer);
 
+        $history = $customer->onboardingHistory()
+            ->with('actor:id,name,customer_id')
+            ->paginate(20);
+
         return response()->json(
-            $customer->onboardingHistory()->paginate(20)
+            \App\Http\Resources\HistoryEntryResource::collection($history)
+                ->response()->getData(true)
         );
     }
 
@@ -151,8 +156,13 @@ class CustomerController extends Controller
     {
         $this->authorize('view', $customer);
 
+        $history = $customer->sepioHistory()
+            ->with('actor:id,name,customer_id')
+            ->paginate(20);
+
         return response()->json(
-            $customer->sepioHistory()->paginate(20)
+            \App\Http\Resources\HistoryEntryResource::collection($history)
+                ->response()->getData(true)
         );
     }
 

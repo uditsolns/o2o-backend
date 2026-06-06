@@ -13,7 +13,7 @@ return new class extends Migration
             $table->foreignId('order_id')->constrained('seal_orders')->cascadeOnDelete();
             $table->string('from_status', 30)->nullable();
             $table->string('to_status', 30);
-            $table->enum('actor_type', ['platform', 'customer', 'system']);
+            $table->enum('actor_type', ['user', 'system']);
             $table->foreignId('actor_id')->nullable()->constrained('users')->nullOnDelete();
             $table->text('remarks')->nullable();
             $table->string('remarks_file_url')->nullable();

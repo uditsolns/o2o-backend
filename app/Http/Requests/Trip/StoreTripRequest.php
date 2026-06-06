@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Trip;
 
 use App\Enums\{TripTransportationMode, TripType};
+use App\Models\Customer;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -19,6 +20,10 @@ class StoreTripRequest extends FormRequest
         $isRoad = in_array($mode, ['road', 'multimodal']);
         $isSea = in_array($mode, ['sea', 'multimodal']);
         $usesSeals = $this->boolean('uses_sepio_seal');
+
+        // Sepio customers carry stricter cargo/shipping-bill requirements;
+        // non-Sepio customers can omit them entirely.
+        $isSepioCustomer = $this->resolveIsSepioCustomer();
 
         return [
             'customer_id' => ['nullable', Rule::requiredIf($this->user()->isPlatformUser()), 'integer', 'exists:customers,id'],
@@ -71,30 +76,34 @@ class StoreTripRequest extends FormRequest
                 'regex:/^[A-Z0-9]{2,10}$/',
             ],
 
-            // Cargo — required always
-            'cargo_type' => ['required', 'string', 'max:100'],
-            'cargo_description' => ['required', 'string'],
-            'invoice_number' => ['required', 'string', 'max:100'],
-            'invoice_date' => ['required', 'date'],
+            // Cargo — optional for all customers. The trip can be created
+            // without any cargo metadata and these fields can be filled in
+            // later via the update endpoint.
+            'cargo_type' => ['nullable', 'string', 'max:100'],
+            'cargo_description' => ['nullable', 'string'],
+            'invoice_number' => ['nullable', 'string', 'max:100'],
+            'invoice_date' => ['nullable', 'date'],
             'eway_bill_number' => ['nullable', 'string', 'regex:/^\d{7,15}$/', 'max:20'],
             'eway_bill_validity_date' => ['nullable', 'date'],
 
-            // Shipping bill — required when uses_sepio_seal is true (needed for seal installation)
-            // Optional otherwise; 7-digit numeric
+            // Shipping bill — the only Sepio-gated cargo field. Sepio seal
+            // installation requires the bill ref, so it is required when the
+            // customer is on Sepio OR when this specific trip opts into a
+            // Sepio seal. Non-Sepio customers can omit it entirely.
             'shipping_bill_no' => [
-                Rule::requiredIf($usesSeals),
+                Rule::requiredIf($isSepioCustomer || $usesSeals),
                 'nullable',
                 'string',
                 'regex:/^\d{7}$/',
                 'max:20',
             ],
             'shipping_bill_date' => [
-                Rule::requiredIf($usesSeals),
+                Rule::requiredIf($isSepioCustomer || $usesSeals),
                 'nullable',
                 'date',
             ],
 
-            // Cargo — optional
+            // Cargo extras — optional for everyone
             'hs_code' => ['nullable', 'string', 'max:20'],
             'gross_weight' => ['nullable', 'numeric', 'min:0'],
             'net_weight' => ['nullable', 'numeric', 'min:0'],
@@ -139,8 +148,8 @@ class StoreTripRequest extends FormRequest
             'destination_port_code' => ['nullable', 'string', 'max:20'],
             'destination_port_category' => ['nullable', 'string', 'max:20'],
 
-            // Timeline
-            'dispatch_date' => ['nullable', 'date'],  // defaults to today() if absent
+            // Timeline — both optional now; dispatch_date defaults to today() in service
+            'dispatch_date' => ['nullable', 'date'],
             'expected_delivery_date' => ['nullable', 'date', 'after_or_equal:dispatch_date'],
 
             // Vessel — optional at creation
@@ -168,9 +177,29 @@ class StoreTripRequest extends FormRequest
             'eway_bill_number.regex' => 'Shipping bill number must be numeric digits only (7–15 digits).',
             'shipping_bill_no.regex' => 'Shipping bill number must be exactly 7 digits.',
             'seal_id.required_if' => 'A seal must be selected when using Sepio seals.',
-            'shipping_bill_no.required_if' => 'Shipping bill number is required when using Sepio seals.',
-            'shipping_bill_date.required_if' => 'Shipping bill date is required when using Sepio seals.',
+            'shipping_bill_no.required' => 'Shipping bill number is required.',
+            'shipping_bill_date.required' => 'Shipping bill date is required.',
             'vehicle_number.regex' => 'Vehicle number must be 5–11 or 17–20 uppercase alphanumeric characters (e.g. MH01AB1234).',
         ];
+    }
+
+    /**
+     * Look up the target customer and check whether Sepio is enabled.
+     * Client users always operate against their own customer; platform users
+     * pass customer_id explicitly in the payload.
+     */
+    private function resolveIsSepioCustomer(): bool
+    {
+        $user = $this->user();
+
+        $customerId = $user->isClientUser()
+            ? $user->customer_id
+            : $this->input('customer_id');
+
+        if (!$customerId) {
+            return false;
+        }
+
+        return (bool) Customer::whereKey($customerId)->value('sepio_enabled');
     }
 }

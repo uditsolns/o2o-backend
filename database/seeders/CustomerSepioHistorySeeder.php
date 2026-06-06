@@ -47,8 +47,8 @@ class CustomerSepioHistorySeeder extends Seeder
                     'customer_id' => $customer->id,
                     'from_status' => $row['from_status'],
                     'to_status' => $row['to_status'],
-                    'triggered_by_type' => $row['triggered_by_type'],
-                    'triggered_by_id' => $row['triggered_by_id'],
+                    'actor_type' => $row['actor_type'],
+                    'actor_id' => $row['actor_id'],
                     'remarks' => $row['remarks'],
                     'rejected_documents' => isset($row['rejected_documents'])
                         ? json_encode($row['rejected_documents'])
@@ -82,8 +82,8 @@ class CustomerSepioHistorySeeder extends Seeder
             [
                 'from_status' => null,
                 'to_status' => SepioStatus::Pending->value,
-                'triggered_by_type' => 'customer',
-                'triggered_by_id' => $customerId,
+                'actor_type' => 'user',
+                'actor_id' => $customerId,
                 'remarks' => 'Sepio integration enabled by customer. Awaiting IL approval.',
                 'created_at' => $step(0),
             ],
@@ -93,8 +93,8 @@ class CustomerSepioHistorySeeder extends Seeder
         $rows[] = [
             'from_status' => SepioStatus::Pending->value,
             'to_status' => SepioStatus::Registered->value,
-            'triggered_by_type' => 'platform',
-            'triggered_by_id' => $adminId,
+            'actor_type' => 'user',
+            'actor_id' => $adminId,
             'remarks' => 'Customer registered with Sepio. Awaiting KYC document upload.',
             'created_at' => $step(2),
         ];
@@ -108,8 +108,8 @@ class CustomerSepioHistorySeeder extends Seeder
             $rows[] = [
                 'from_status' => SepioStatus::Registered->value,
                 'to_status' => SepioStatus::DocsUploaded->value,
-                'triggered_by_type' => 'customer',
-                'triggered_by_id' => $customerId,
+                'actor_type' => 'user',
+                'actor_id' => $customerId,
                 'remarks' => 'All required KYC documents uploaded (PAN, IEC, GST, Certificate of Registration, Self-stuffing declaration).',
                 'created_at' => $step(4),
             ];
@@ -123,8 +123,8 @@ class CustomerSepioHistorySeeder extends Seeder
             $rows[] = [
                 'from_status' => SepioStatus::DocsUploaded->value,
                 'to_status' => SepioStatus::VerificationPending->value,
-                'triggered_by_type' => 'system',
-                'triggered_by_id' => null,
+                'actor_type' => 'system',
+                'actor_id' => null,
                 'remarks' => 'Documents forwarded to Sepio for verification.',
                 'created_at' => $step(6),
             ];
@@ -135,8 +135,8 @@ class CustomerSepioHistorySeeder extends Seeder
             $rows[] = [
                 'from_status' => SepioStatus::VerificationPending->value,
                 'to_status' => SepioStatus::Verified->value,
-                'triggered_by_type' => 'platform',
-                'triggered_by_id' => $adminId,
+                'actor_type' => 'user',
+                'actor_id' => $adminId,
                 'remarks' => 'Sepio verification complete. Customer is now ready to place seal orders.',
                 'created_at' => $step(10),
             ];
@@ -144,8 +144,8 @@ class CustomerSepioHistorySeeder extends Seeder
             $rows[] = [
                 'from_status' => SepioStatus::VerificationPending->value,
                 'to_status' => SepioStatus::Rejected->value,
-                'triggered_by_type' => 'platform',
-                'triggered_by_id' => $adminId,
+                'actor_type' => 'user',
+                'actor_id' => $adminId,
                 'remarks' => 'Sepio rejected the submitted documents. Customer must re-upload.',
                 'rejected_documents' => ['self_stuffing_cert', 'cha_auth_letter'],
                 'created_at' => $step(10),

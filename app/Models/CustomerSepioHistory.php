@@ -13,7 +13,7 @@ class CustomerSepioHistory extends Model
 
     protected $fillable = [
         'customer_id', 'from_status', 'to_status',
-        'triggered_by_type', 'triggered_by_id',
+        'actor_type', 'actor_id',
         'remarks', 'rejected_documents',
     ];
 
@@ -35,6 +35,11 @@ class CustomerSepioHistory extends Model
 
     public function triggeredBy(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'triggered_by_id');
+        return $this->belongsTo(User::class, 'actor_id');
+    }
+
+    public function actor(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'actor_id');
     }
 }

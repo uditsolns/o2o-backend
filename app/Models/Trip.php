@@ -73,8 +73,14 @@ class Trip extends Model
 
         static::creating(function (Trip $trip) {
             if (empty($trip->trip_ref)) {
-                $last = static::withoutGlobalScopes()->lockForUpdate()->latest('id')->value('trip_ref');
-                $next = $last ? (int)substr($last, 2) + 1 : 1;
+                // Match only the auto-numbered `TR\d{7}` format so legacy
+                // custom refs (e.g. TR_II_T01) don't trip up the counter.
+                $last = static::withoutGlobalScopes()
+                    ->where('trip_ref', 'REGEXP', '^TR[0-9]{7}$')
+                    ->lockForUpdate()
+                    ->orderByDesc('id')
+                    ->value('trip_ref');
+                $next = $last ? (int) substr($last, 2) + 1 : 1;
                 $trip->trip_ref = 'TR' . str_pad($next, 7, '0', STR_PAD_LEFT);
             }
         });

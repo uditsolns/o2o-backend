@@ -39,7 +39,21 @@ class OnboardingController extends Controller
             ->map(fn($p) => is_string($p->port_category) ? $p->port_category : $p->port_category->value)
             ->all();
 
-        $latestHistory = $customer->onboardingHistory()->first();
+        $latestHistory = $customer->onboardingHistory()->with('actor:id,name,customer_id')->first();
+
+        // Ports / ICD / signatory checks only apply to Sepio customers — they are
+        // not part of the non-Sepio onboarding journey at all.
+        $checklist = [
+            'profile_complete' => $this->isProfileComplete($customer),
+            'required_docs' => CustomerDocType::required($customer->sepio_enabled),
+            'uploaded_doc_types' => $uploadedDocTypes,
+        ];
+
+        if ($customer->sepio_enabled) {
+            $checklist['has_signatories'] = $customer->signatories->isNotEmpty();
+            $checklist['has_port'] = in_array('port', $portCategories, true);
+            $checklist['has_icd'] = in_array('icd', $portCategories, true);
+        }
 
         return response()->json([
             'onboarding_status' => $customer->onboarding_status,
@@ -47,30 +61,15 @@ class OnboardingController extends Controller
             'sepio_status' => $customer->sepio_status,
             'can_submit' => $this->canSubmit($customer, $portCategories),
             'customer' => new CustomerResource($customer),
-            'signatories' => AuthorizedSignatoryResource::collection($customer->signatories),
+            'signatories' => $customer->sepio_enabled
+                ? AuthorizedSignatoryResource::collection($customer->signatories)
+                : [],
             'documents' => CustomerDocumentResource::collection($customer->documents),
             'ports' => $customer->sepio_enabled ? $customer->ports : [],
-            'latest_action' => $latestHistory ? [
-                'from_status' => $latestHistory->from_status,
-                'to_status' => $latestHistory->to_status,
-                'actor_type' => $latestHistory->actor_type,
-                'remarks' => $latestHistory->remarks,
-                'remarks_file_url' => $latestHistory->remarks_file_url
-                    ? Storage::temporaryUrl($latestHistory->remarks_file_url, now()->addMinutes(30))
-                    : null,
-                'created_at' => $latestHistory->created_at,
-            ] : null,
-            'checklist' => [
-                'profile_complete' => $this->isProfileComplete($customer),
-                'has_signatories' => $customer->signatories->isNotEmpty(),
-                'required_docs' => CustomerDocType::required($customer->sepio_enabled),
-                'uploaded_doc_types' => $uploadedDocTypes,
-                // Separate port and ICD — both required for Sepio, always true for non-Sepio
-                'has_port' => !$customer->sepio_enabled
-                    || in_array('port', $portCategories, true),
-                'has_icd' => !$customer->sepio_enabled
-                    || in_array('icd', $portCategories, true),
-            ],
+            'latest_action' => $latestHistory
+                ? (new \App\Http\Resources\HistoryEntryResource($latestHistory))->toArray($request)
+                : null,
+            'checklist' => $checklist,
         ]);
     }
 
@@ -157,6 +156,15 @@ class OnboardingController extends Controller
         $this->denyIfSubmitted($request);
 
         $customer = $this->resolveCustomer($request);
+
+        // Ports/ICD are only collected for Sepio customers — reject the call
+        // for non-Sepio so the frontend can't silently persist orphan data.
+        abort_unless(
+            $customer->isSepioEnabled(),
+            422,
+            'Ports are only required for Sepio-enabled customers.'
+        );
+
         $this->service->savePorts($customer, $request->validated('port_ids'));
 
         return response()->json(['message' => 'Ports saved.']);
@@ -225,9 +233,8 @@ class OnboardingController extends Controller
 
     private function isProfileComplete(Customer $customer): bool
     {
+        // Billing fields are required for everyone; company/GST/IEC only when Sepio is on.
         $required = [
-            'company_type',
-            'gst_number',
             'billing_address',
             'billing_city',
             'billing_state',
@@ -235,6 +242,8 @@ class OnboardingController extends Controller
         ];
 
         if ($customer->sepio_enabled) {
+            $required[] = 'company_type';
+            $required[] = 'gst_number';
             $required[] = 'iec_number';
         }
 
@@ -260,10 +269,14 @@ class OnboardingController extends Controller
             $uploadedDocTypes
         ));
 
-        $hasSignatories = $customer->signatories->isNotEmpty();
-
+        // Signatories and ports are Sepio-only requirements.
+        // Non-Sepio customers can submit without either.
+        $hasSignatories = true;
         $hasPorts = true;
+
         if ($customer->sepio_enabled) {
+            $hasSignatories = $customer->signatories->isNotEmpty();
+
             // If portCategories not passed (e.g. called outside status()),
             // compute it from the loaded relation
             if (empty($portCategories) && $customer->relationLoaded('ports')) {

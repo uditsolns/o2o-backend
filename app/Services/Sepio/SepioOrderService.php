@@ -5,6 +5,8 @@ namespace App\Services\Sepio;
 use App\Enums\SealOrderStatus;
 use App\Exceptions\SepioException;
 use App\Models\SealOrder;
+use App\Models\SealOrderHistory;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 readonly class SepioOrderService
@@ -98,12 +100,27 @@ readonly class SepioOrderService
 
         $sepioOrderId = $response->json('orderId');
 
-        $order->update([
-            'sepio_order_id' => $sepioOrderId,
-            'sepio_billing_address_id' => $billingLocation->sepio_billing_address_id,
-            'sepio_shipping_address_id' => $shippingLocation->sepio_shipping_address_id,
-            'status' => SealOrderStatus::MfgPending,
-        ]);
+        // Wrap status flip + history insert in a transaction so the lifecycle
+        // ledger stays in lockstep with the order row.
+        DB::transaction(function () use ($order, $sepioOrderId, $billingLocation, $shippingLocation) {
+            $fromStatus = $order->status->value;
+
+            $order->update([
+                'sepio_order_id' => $sepioOrderId,
+                'sepio_billing_address_id' => $billingLocation->sepio_billing_address_id,
+                'sepio_shipping_address_id' => $shippingLocation->sepio_shipping_address_id,
+                'status' => SealOrderStatus::MfgPending,
+            ]);
+
+            SealOrderHistory::create([
+                'order_id' => $order->id,
+                'from_status' => $fromStatus,
+                'to_status' => SealOrderStatus::MfgPending->value,
+                'actor_type' => 'system',
+                'actor_id' => null,
+                'remarks' => "Order placed with Sepio (ref: {$sepioOrderId}).",
+            ]);
+        });
 
         Log::info('Sepio order placed', [
             'order_id' => $order->id,

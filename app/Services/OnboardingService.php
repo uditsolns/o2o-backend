@@ -92,19 +92,43 @@ class OnboardingService
     {
         $path = $file->store("customers/{$customer->id}/documents");
 
-        $document = $customer->documents()->create([
-            'uploaded_by_id' => $uploadedBy->id,
-            'doc_type' => $data['doc_type'],
-            'doc_number' => $data['doc_number'] ?? null,
-            'file_name' => $file->getClientOriginalName(),
-            'url' => $path,
-        ]);
+        // One document per type per customer — re-uploading replaces the existing
+        // entry (and its file) rather than spawning duplicates. This keeps the
+        // Sepio document list aligned with what we have on our side after a
+        // rejection-and-retry cycle.
+        return DB::transaction(function () use ($customer, $data, $file, $uploadedBy, $path) {
+            $existing = $customer->documents()
+                ->where('doc_type', $data['doc_type'])
+                ->first();
 
-        if ($customer->sepio_company_id) {
-            SepioUploadDocumentJob::dispatch($customer, $document);
-        }
+            if ($existing && $existing->url && $existing->url !== $path) {
+                Storage::delete($existing->url);
+            }
 
-        return $document;
+            $attributes = [
+                'uploaded_by_id' => $uploadedBy->id,
+                'doc_number' => $data['doc_number'] ?? null,
+                'file_name' => $file->getClientOriginalName(),
+                'url' => $path,
+                // Wipe any prior rejection so the next Sepio cycle starts clean
+                'sepio_rejection_reason' => null,
+                'sepio_file_name' => null,
+            ];
+
+            $document = $customer->documents()->updateOrCreate(
+                [
+                    'customer_id' => $customer->id,
+                    'doc_type' => $data['doc_type'],
+                ],
+                $attributes
+            );
+
+            if ($customer->sepio_company_id) {
+                SepioUploadDocumentJob::dispatch($customer, $document);
+            }
+
+            return $document;
+        });
     }
 
     public function deleteDocument(CustomerDocument $document): void
@@ -158,7 +182,6 @@ class OnboardingService
             $customer->id,
             $fromStatus,
             CustomerOnboardingStatus::Submitted->value,
-            'customer',
             $by->id,
             'Customer submitted onboarding for review.'
         );
@@ -183,7 +206,6 @@ class OnboardingService
             $customer->id,
             CustomerOnboardingStatus::IlRejected->value,
             CustomerOnboardingStatus::Pending->value,
-            'customer',
             $by->id,
             'Customer acknowledged rejection and reopened onboarding for editing.'
         );
@@ -205,10 +227,10 @@ class OnboardingService
                 $errors = $readiness['missing'];
             }
         } else {
-            // Non-Sepio flow — basic gating only.
+            // Non-Sepio flow — relaxed gating. Profile fields like company_type,
+            // GST, IEC are optional for non-Sepio customers. Only billing address
+            // and the basic GST cert document are mandatory.
             $requiredFields = [
-                'company_type',
-                'gst_number',
                 'billing_address',
                 'billing_city',
                 'billing_state',
@@ -219,10 +241,6 @@ class OnboardingService
                 if (empty($customer->$field)) {
                     $errors[] = "Field '{$field}' is required before submission.";
                 }
-            }
-
-            if ($customer->signatories()->count() === 0) {
-                $errors[] = 'At least one authorized signatory is required.';
             }
 
             $uploaded = $customer->documents()

@@ -48,7 +48,6 @@ class CustomerService
                 $customer->id,
                 null,
                 CustomerOnboardingStatus::Pending->value,
-                'platform',
                 $createdBy->id,
                 'Customer account created.'
             );
@@ -69,6 +68,18 @@ class CustomerService
 
     public function approve(Customer $customer, array $data, User $by): Customer
     {
+        // Guard against double-approval — only customers actively awaiting
+        // a decision should be approvable. Submitted or parked are the two
+        // states a customer can be in before the IL verdict.
+        abort_unless(
+            in_array($customer->onboarding_status, [
+                CustomerOnboardingStatus::Submitted,
+                CustomerOnboardingStatus::IlParked,
+            ], true),
+            422,
+            'Customer is not awaiting IL approval — only submitted or parked customers can be approved.'
+        );
+
         $fromStatus = $customer->onboarding_status->value;
 
         $customer->update([
@@ -82,7 +93,6 @@ class CustomerService
             $customer->id,
             $fromStatus,
             CustomerOnboardingStatus::IlApproved->value,
-            'platform',
             $by->id,
             $data['remarks'] ?? null,
         );
@@ -115,7 +125,6 @@ class CustomerService
                 $customer->id,
                 null,
                 SepioStatus::Pending->value,
-                'platform',
                 $by->id,
                 'Sepio onboarding initiated on IL approval.'
             );
@@ -129,9 +138,8 @@ class CustomerService
                 $customer->id,
                 CustomerOnboardingStatus::IlApproved->value,
                 CustomerOnboardingStatus::Completed->value,
-                'system',
                 null,
-                'Auto-completed — Sepio not enabled for this customer.'
+                'Onboarding completed — Sepio integration not enabled for this customer.'
             );
         }
 
@@ -140,6 +148,15 @@ class CustomerService
 
     public function reject(Customer $customer, array $data, User $by): Customer
     {
+        abort_unless(
+            in_array($customer->onboarding_status, [
+                CustomerOnboardingStatus::Submitted,
+                CustomerOnboardingStatus::IlParked,
+            ], true),
+            422,
+            'Only submitted or parked customers can be rejected.'
+        );
+
         $fromStatus = $customer->onboarding_status->value;
         $remarksFilePath = null;
 
@@ -158,7 +175,6 @@ class CustomerService
             $customer->id,
             $fromStatus,
             CustomerOnboardingStatus::IlRejected->value,
-            'platform',
             $by->id,
             $data['remarks'],
             $remarksFilePath,
@@ -169,6 +185,12 @@ class CustomerService
 
     public function park(Customer $customer, array $data, User $by): Customer
     {
+        abort_unless(
+            $customer->onboarding_status === CustomerOnboardingStatus::Submitted,
+            422,
+            'Only submitted customers can be parked.'
+        );
+
         $fromStatus = $customer->onboarding_status->value;
         $remarksFilePath = null;
 
@@ -187,7 +209,6 @@ class CustomerService
             $customer->id,
             $fromStatus,
             CustomerOnboardingStatus::IlParked->value,
-            'platform',
             $by->id,
             $data['remarks'] ?? null,
             $remarksFilePath,
@@ -217,7 +238,6 @@ class CustomerService
             $customer->id,
             CustomerOnboardingStatus::IlRejected->value,
             CustomerOnboardingStatus::Pending->value,
-            'customer',
             $by->id,
             'Rejection acknowledged. Onboarding reopened for editing.'
         );
@@ -257,7 +277,6 @@ class CustomerService
             $customer->id,
             null,
             SepioStatus::Pending->value,
-            'platform',
             $by->id,
             'Sepio integration enabled by platform user.'
         );
@@ -269,6 +288,12 @@ class CustomerService
 
     /**
      * Platform retries Sepio registration after rejection.
+     *
+     * Resumes from the earliest unfinished step:
+     *  - never registered → start from Pending so the job re-attempts registration
+     *  - registered, docs rejected → resume at DocsUploaded so the job re-uploads
+     *    only the documents and re-waits for verification (no duplicate
+     *    pending/registered history)
      */
     public function retrySepioRegistration(Customer $customer, User $by): Customer
     {
@@ -286,13 +311,20 @@ class CustomerService
 
         $fromStatus = $customer->sepio_status->value;
 
-        $customer->update(['sepio_status' => SepioStatus::Pending]);
+        // Choose the resume status:
+        //   - no sepio_company_id → registration itself failed, restart at Pending
+        //   - already registered → jump to Registered so the job picks up from
+        //     document upload without rewriting the "pending → registered" event
+        $resumeStatus = $customer->sepio_company_id
+            ? SepioStatus::Registered
+            : SepioStatus::Pending;
+
+        $customer->update(['sepio_status' => $resumeStatus]);
 
         $this->recordSepioHistory(
             $customer->id,
             $fromStatus,
-            SepioStatus::Pending->value,
-            'platform',
+            $resumeStatus->value,
             $by->id,
             'Sepio registration retry initiated by platform.'
         );

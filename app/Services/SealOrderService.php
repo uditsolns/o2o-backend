@@ -90,7 +90,6 @@ class SealOrderService
                 $order->id,
                 null,
                 SealOrderStatus::IlPending->value,
-                'customer',
                 $orderedBy->id,
                 'Order placed.'
             );
@@ -145,7 +144,6 @@ class SealOrderService
             $order->id,
             $fromStatus,
             SealOrderStatus::IlApproved->value,
-            'platform',
             $by->id,
             $data['remarks'] ?? null,
             $remarksFilePath,
@@ -203,7 +201,6 @@ class SealOrderService
             $order->id,
             $fromStatus,
             SealOrderStatus::IlRejected->value,
-            'platform',
             $by->id,
             $data['remarks'],
             $remarksFilePath,
@@ -237,7 +234,6 @@ class SealOrderService
             $order->id,
             SealOrderStatus::IlPending->value,
             SealOrderStatus::IlParked->value,
-            'platform',
             $by->id,
             $data['remarks'],
             $remarksFilePath,
@@ -279,9 +275,8 @@ class SealOrderService
             $order->id,
             $order->status->value,
             $order->status->value,
-            'platform',
             $by->id,
-            'Cash payment confirmed as received.'
+            'Cash payment confirmed as received by platform.'
         );
 
         return $order->fresh();
@@ -318,8 +313,18 @@ class SealOrderService
 
     private function generateOrderRef(): string
     {
-        $last = SealOrder::lockForUpdate()->latest('id')->value('order_ref');
-        $next = $last ? (int)substr($last, 2) + 1 : 1;
+        // SealOrder carries a TenantScope, so a raw query would only see
+        // refs belonging to the current tenant — leading to identical refs
+        // across tenants. Pull the last ref globally, matching only the
+        // auto-numbered `IL\d{7}` format so any custom-format refs in the
+        // table can't poison the counter.
+        $last = SealOrder::withoutGlobalScopes()
+            ->where('order_ref', 'REGEXP', '^IL[0-9]{7}$')
+            ->lockForUpdate()
+            ->orderByDesc('id')
+            ->value('order_ref');
+
+        $next = $last ? (int) substr($last, 2) + 1 : 1;
         return 'IL' . str_pad($next, 7, '0', STR_PAD_LEFT);
     }
 }

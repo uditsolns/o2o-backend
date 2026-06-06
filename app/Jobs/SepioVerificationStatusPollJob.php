@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Enums\CustomerOnboardingStatus;
 use App\Enums\SepioStatus;
 use App\Models\Customer;
+use App\Models\CustomerOnboardingHistory;
 use App\Models\CustomerSepioHistory;
 use App\Services\Sepio\SepioClient;
 use Illuminate\Bus\Queueable;
@@ -13,6 +14,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class SepioVerificationStatusPollJob implements ShouldQueue
@@ -80,20 +82,42 @@ class SepioVerificationStatusPollJob implements ShouldQueue
 
     private function markCompleted(Customer $customer): void
     {
-        $fromStatus = $customer->sepio_status->value;
+        $fromSepioStatus = $customer->sepio_status->value;
+        $fromOnboardingStatus = $customer->onboarding_status?->value;
 
-        $customer->update([
-            'sepio_status' => SepioStatus::Verified,
-            'onboarding_status' => CustomerOnboardingStatus::Completed,
-        ]);
+        // Sepio verification passed → mark both lifecycles complete.
+        // Wrap in a transaction so we never end up with the status flipped but
+        // history entries missing (or vice versa).
+        DB::transaction(function () use ($customer, $fromSepioStatus, $fromOnboardingStatus) {
+            $customer->update([
+                'sepio_status' => SepioStatus::Verified,
+                'onboarding_status' => CustomerOnboardingStatus::Completed,
+            ]);
 
-        CustomerSepioHistory::create([
-            'customer_id' => $customer->id,
-            'from_status' => $fromStatus,
-            'to_status' => SepioStatus::Verified->value,
-            'triggered_by_type' => 'job',
-            'remarks' => 'Sepio document verification passed.',
-        ]);
+            CustomerSepioHistory::create([
+                'customer_id' => $customer->id,
+                'from_status' => $fromSepioStatus,
+                'to_status' => SepioStatus::Verified->value,
+                'actor_type' => 'system',
+                'actor_id' => null,
+                'remarks' => 'Sepio document verification passed.',
+            ]);
+
+            // Mirror the completion on the platform onboarding timeline so the
+            // customer-facing onboarding-history endpoint shows the final step.
+            // Without this, the timeline ends at il_approved and the customer
+            // never sees that onboarding actually finished.
+            if ($fromOnboardingStatus !== CustomerOnboardingStatus::Completed->value) {
+                CustomerOnboardingHistory::create([
+                    'customer_id' => $customer->id,
+                    'from_status' => $fromOnboardingStatus,
+                    'to_status' => CustomerOnboardingStatus::Completed->value,
+                    'actor_type' => 'system',
+                    'actor_id' => null,
+                    'remarks' => 'Onboarding completed — Sepio verification passed.',
+                ]);
+            }
+        });
 
         Log::info('Customer Sepio verification completed', ['customer_id' => $customer->id]);
     }
@@ -120,7 +144,8 @@ class SepioVerificationStatusPollJob implements ShouldQueue
             'customer_id' => $customer->id,
             'from_status' => $fromStatus,
             'to_status' => SepioStatus::Rejected->value,
-            'triggered_by_type' => 'job',
+            'actor_type' => 'system',
+            'actor_id' => null,
             'remarks' => "Sepio rejected the following documents: {$rejected}",
             'rejected_documents' => $rejectedDocuments,
         ]);

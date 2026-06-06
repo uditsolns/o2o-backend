@@ -77,6 +77,15 @@ readonly class SepioSealService
         $sepioOrderId = $seal->order?->sepio_order_id;
         if (!$sepioOrderId) return false;
 
+        // Shipping bill is mandatory on Sepio's side — fail loudly here so the
+        // caller (TripService::startTrip / TripService::autoStartTrip) rolls
+        // back the status flip instead of letting Sepio reject the install.
+        abort_if(
+            empty($trip->shipping_bill_no) || empty($trip->shipping_bill_date),
+            422,
+            'Shipping bill number and date are required before installing a Sepio seal.'
+        );
+
         $destinationPort = $trip->destination_port_code
             ? "{$trip->destination_port_name} ({$trip->destination_port_code})"
             : null;
@@ -97,12 +106,8 @@ readonly class SepioSealService
             'sealNo' => $matches[2],
             'companyId' => $customer->sepio_company_id,
             'createdBy' => $customer->primary_contact_email ?? $customer->email,
-            'shippingBillNo' => [$trip->shipping_bill_no ?? ''],
-            'shippingBillDate' => [
-                $trip->shipping_bill_date
-                    ? $trip->shipping_bill_date->format('d-m-Y')
-                    : now()->format('d-m-Y'),
-            ],
+            'shippingBillNo' => [$trip->shipping_bill_no],
+            'shippingBillDate' => [$trip->shipping_bill_date->format('d-m-Y')],
             'sealingDate' => $sealingDate,
             'sealingTime' => $sealingTime,
             'destinationStation' => $destinationPort,

@@ -8,6 +8,7 @@ use App\Enums\SepioSealStatus;
 use App\Enums\TripStatus;
 use App\Models\Seal;
 use App\Models\SealOrder;
+use App\Models\SealOrderHistory;
 use App\Models\SealStatusLog;
 use App\Models\TripEvent;
 use App\Services\Sepio\SepioSealService;
@@ -64,11 +65,22 @@ readonly class SealService
             }
 
             if ($complete) {
+                $fromStatus = $order->status->value;
+
                 $order->update([
                     'status' => SealOrderStatus::Completed,
                     'seals_delivered_at' => $now,
                     // Only set dispatched_at as fallback if not already stamped by the status sync job
                     ...(!$order->seals_dispatched_at ? ['seals_dispatched_at' => $dispatchedAt] : []),
+                ]);
+
+                SealOrderHistory::create([
+                    'order_id' => $order->id,
+                    'from_status' => $fromStatus,
+                    'to_status' => SealOrderStatus::Completed->value,
+                    'actor_type' => 'system',
+                    'actor_id' => null,
+                    'remarks' => "Seals ingested ({$order->quantity}) and order completed.",
                 ]);
             } else {
                 // Stamp dispatched_at if not already set — don't touch status
@@ -110,7 +122,9 @@ readonly class SealService
             return;
         }
 
-        DB::transaction(function () use ($order) {
+        $fromStatus = $order->status->value;
+
+        DB::transaction(function () use ($order, $fromStatus) {
             // Activate all seals for this order — they are now usable
             $order->seals()
                 ->where('status', SealStatus::Inactive)
@@ -119,6 +133,15 @@ readonly class SealService
             $order->update([
                 'status' => SealOrderStatus::Completed,
                 'seals_delivered_at' => $order->seals_delivered_at ?? now(),
+            ]);
+
+            SealOrderHistory::create([
+                'order_id' => $order->id,
+                'from_status' => $fromStatus,
+                'to_status' => SealOrderStatus::Completed->value,
+                'actor_type' => 'system',
+                'actor_id' => null,
+                'remarks' => 'Order completed — seals activated and ready for use.',
             ]);
         });
 

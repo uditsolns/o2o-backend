@@ -87,7 +87,7 @@ class SealOrderHistorySeeder extends Seeder
         $rows[] = [
             'from_status' => null,
             'to_status' => SealOrderStatus::IlPending->value,
-            'actor_type' => 'customer',
+            'actor_type' => 'user',
             'actor_id' => $customerActorId,
             'remarks' => 'Order placed.',
             'created_at' => $orderedAt,
@@ -104,7 +104,7 @@ class SealOrderHistorySeeder extends Seeder
                 $rows[] = [
                     'from_status' => SealOrderStatus::IlPending->value,
                     'to_status' => SealOrderStatus::IlParked->value,
-                    'actor_type' => 'platform',
+                    'actor_type' => 'user',
                     'actor_id' => $ilActorId,
                     'remarks' => $order->il_remarks ?: 'Parked pending additional verification.',
                     'created_at' => $ilAt,
@@ -115,7 +115,7 @@ class SealOrderHistorySeeder extends Seeder
                 $rows[] = [
                     'from_status' => SealOrderStatus::IlPending->value,
                     'to_status' => SealOrderStatus::IlRejected->value,
-                    'actor_type' => 'platform',
+                    'actor_type' => 'user',
                     'actor_id' => $ilActorId,
                     'remarks' => $order->il_remarks ?: 'Order rejected.',
                     'created_at' => $ilAt,
@@ -132,7 +132,7 @@ class SealOrderHistorySeeder extends Seeder
                 $rows[] = [
                     'from_status' => SealOrderStatus::IlPending->value,
                     'to_status' => SealOrderStatus::IlApproved->value,
-                    'actor_type' => 'platform',
+                    'actor_type' => 'user',
                     'actor_id' => $ilActorId,
                     'remarks' => $order->il_remarks ?: 'Approved. Forwarded to Sepio for manufacturing.',
                     'created_at' => $ilAt,
@@ -219,7 +219,7 @@ class SealOrderHistorySeeder extends Seeder
                     $rows[] = [
                         'from_status' => SealOrderStatus::InTransit->value,
                         'to_status' => SealOrderStatus::Completed->value,
-                        'actor_type' => 'customer',
+                        'actor_type' => 'user',
                         'actor_id' => $customerActorId,
                         'remarks' => 'Seals received and ingested into inventory.',
                         'created_at' => $deliveredAt,
@@ -231,7 +231,7 @@ class SealOrderHistorySeeder extends Seeder
                 $rows[] = [
                     'from_status' => SealOrderStatus::IlPending->value,
                     'to_status' => SealOrderStatus::IlApproved->value,
-                    'actor_type' => 'platform',
+                    'actor_type' => 'user',
                     'actor_id' => $ilActorId,
                     'remarks' => 'Approved. Forwarded to Sepio for manufacturing.',
                     'created_at' => $ilAt,
@@ -247,7 +247,7 @@ class SealOrderHistorySeeder extends Seeder
                 $rows[] = [
                     'from_status' => SealOrderStatus::MfgPending->value,
                     'to_status' => SealOrderStatus::MfgRejected->value,
-                    'actor_type' => 'platform',
+                    'actor_type' => 'user',
                     'actor_id' => $ilActorId,
                     'remarks' => $order->il_remarks ?: 'Sepio manufacturer rejected the order.',
                     'created_at' => $ilAt->copy()->addDays(4),
@@ -264,7 +264,7 @@ class SealOrderHistorySeeder extends Seeder
             $rows[] = [
                 'from_status' => $current,
                 'to_status' => $current,
-                'actor_type' => 'platform',
+                'actor_type' => 'user',
                 'actor_id' => $ilActorId,
                 'remarks' => 'Cash payment confirmed as received.',
                 'created_at' => $dispatchAt->copy()->addHours(6),

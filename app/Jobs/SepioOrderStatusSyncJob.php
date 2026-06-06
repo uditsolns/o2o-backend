@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Enums\SealOrderStatus;
 use App\Models\SealOrder;
+use App\Models\SealOrderHistory;
 use App\Services\SealService;
 use App\Services\Sepio\SepioClient;
 use Illuminate\Bus\Queueable;
@@ -12,6 +13,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class SepioOrderStatusSyncJob implements ShouldQueue
@@ -135,7 +137,18 @@ class SepioOrderStatusSyncJob implements ShouldQueue
         // Cancellation is terminal — always apply regardless of current status
         if ($newStatus === SealOrderStatus::MfgRejected) {
             if ($order->status !== SealOrderStatus::MfgRejected) {
-                $order->update(['status' => $newStatus]);
+                $fromStatus = $order->status->value;
+                DB::transaction(function () use ($order, $newStatus, $fromStatus, $rawStatus) {
+                    $order->update(['status' => $newStatus]);
+                    SealOrderHistory::create([
+                        'order_id' => $order->id,
+                        'from_status' => $fromStatus,
+                        'to_status' => $newStatus->value,
+                        'actor_type' => 'system',
+                        'actor_id' => null,
+                        'remarks' => "Order cancelled by Sepio (status: {$rawStatus}).",
+                    ]);
+                });
                 Log::warning('SepioOrderStatusSyncJob: order cancelled by Sepio', [
                     'order_id'       => $order->id,
                     'sepio_order_id' => $order->sepio_order_id,
@@ -146,6 +159,7 @@ class SepioOrderStatusSyncJob implements ShouldQueue
 
         if ($this->isRegressionOrSame($order->status, $newStatus)) return;
 
+        $fromStatus = $order->status->value;
         $orderUpdates = ['status' => $newStatus];
 
         // Stamp dispatch time when transitioning to InTransit
@@ -153,12 +167,23 @@ class SepioOrderStatusSyncJob implements ShouldQueue
             $orderUpdates['seals_dispatched_at'] = now();
         }
 
-        $order->update($orderUpdates);
+        DB::transaction(function () use ($order, $orderUpdates, $newStatus, $fromStatus, $rawStatus) {
+            $order->update($orderUpdates);
+
+            SealOrderHistory::create([
+                'order_id' => $order->id,
+                'from_status' => $fromStatus,
+                'to_status' => $newStatus->value,
+                'actor_type' => 'system',
+                'actor_id' => null,
+                'remarks' => "Status advanced by Sepio (sepio status: {$rawStatus}).",
+            ]);
+        });
 
         Log::info('SepioOrderStatusSyncJob: status advanced', [
             'order_id'       => $order->id,
             'sepio_order_id' => $order->sepio_order_id,
-            'from'           => $order->status->value,
+            'from'           => $fromStatus,
             'to'             => $newStatus->value,
             'sepio_status'   => $rawStatus,
         ]);
