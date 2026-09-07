@@ -41,7 +41,7 @@ readonly class SepioAuthService
         }
 
         $response = Http::baseUrl(config('sepio.base_url'))
-            ->post('/users/login', [
+            ->post(config('sepio.login_endpoint'), [
                 'username' => $this->encryption->encrypt($credentials['email']),
                 'password' => $this->encryption->encrypt($credentials['password']),
             ]);

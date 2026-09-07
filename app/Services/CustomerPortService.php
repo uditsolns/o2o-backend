@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Jobs\SepioUpdateCompanyDetailsJob;
+use App\Models\Customer;
 use App\Models\CustomerPort;
 use App\Models\Port;
 use App\Models\User;
@@ -20,7 +22,7 @@ class CustomerPortService
             ->where('is_active', true)
             ->firstOrFail();
 
-        return CustomerPort::create([
+        $customerPort = CustomerPort::create([
             'customer_id' => $customerId,
             'port_id' => $port->id,
             'port_category' => $port->port_category->value,
@@ -31,22 +33,41 @@ class CustomerPortService
             'geo_fence_radius' => $data['geo_fence_radius'] ?? $port->geo_fence_radius,
             'is_active' => true,
         ]);
+
+        $this->syncToSepio($customerPort);
+
+        return $customerPort;
     }
 
     public function update(CustomerPort $customerPort, array $data): CustomerPort
     {
         $customerPort->update($data);
+        $this->syncToSepio($customerPort);
+
         return $customerPort->fresh();
     }
 
     public function delete(CustomerPort $customerPort): void
     {
+        $customer = $customerPort->customer;
         $customerPort->delete();
+        $this->syncToSepio($customerPort, $customer);
     }
 
     public function toggleActive(CustomerPort $customerPort): CustomerPort
     {
         $customerPort->update(['is_active' => !$customerPort->is_active]);
+        $this->syncToSepio($customerPort);
+
         return $customerPort->fresh();
+    }
+
+    private function syncToSepio(CustomerPort $customerPort, ?Customer $customer = null): void
+    {
+        $customer ??= $customerPort->customer;
+
+        if ($customer?->sepio_company_id) {
+            SepioUpdateCompanyDetailsJob::dispatch($customer);
+        }
     }
 }

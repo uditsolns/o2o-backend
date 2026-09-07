@@ -97,30 +97,31 @@ readonly class SepioSealService
             ? "{$trip->origin_port_name} ({$trip->origin_port_code})"
             : null;
 
-        $sealingDate = $seal->created_at->format('Y-m-d')
-            ?? $trip->dispatch_date?->format('Y-m-d')
-            ?? now()->format('Y-m-d');
-
-        $sealingTime = $trip->trip_start_time?->format('H:i:s')
-            ?? now()->format('H:i:s');
-
-        $response = $this->client->postAs($customer, '/installationUser/installseal', [
+        $payload = [
             'sealString' => $matches[1],
             'sealNo' => $matches[2],
             'companyId' => $customer->sepio_company_id,
             'createdBy' => $customer->primary_contact_email ?? $customer->email,
             'shippingBillNo' => [$trip->shipping_bill_no],
             'shippingBillDate' => [$trip->shipping_bill_date->format('d-m-Y')],
-            'sealingDate' => $sealingDate,
-            'sealingTime' => $sealingTime,
+            'sealingDate' => now()->format('Y-m-d'),
+            'sealingTime' => now()->format('H:i:s'),
             'destinationStation' => $destinationPort,
             'connectingPort' => $connectingPort,
             'containerNo' => $trip->container_number ?? '',
             'truckNo' => $trip->vehicle_number ?? '',
             'orderId' => $sepioOrderId,
             'sealDraftId' => 'default',
-            'ebnNo' => [[[$trip->eway_bill_number ?? ''], [], [0]]],
-        ]);
+            'ebnNo' => [[
+                [$trip->shipping_bill_no],
+                $trip->eway_bill_number ? [$trip->eway_bill_number] : [],
+                [$trip->eway_bill_number ? 1 : 0],
+            ]],
+        ];
+
+        SepioPayloadValidator::installSeal($payload);
+
+        $response = $this->client->postAs($customer, '/installationUser/installseal', $payload);
 
         if ($response->failed()) {
             $json = $response->json() ?? [];

@@ -47,31 +47,27 @@ readonly class SepioOrderService
             $orderPorts = collect($order->sepio_order_ports ?? [])->all();
         }
 
-        $wallet = $customer->wallet;
-
-        $response = $this->client->postAs($customer, '/companyadmin/placedorder', [
+        $payload = [
             'sealType' => 'bolt',
             'companyId' => $customer->sepio_company_id,
             'shippingAddressId' => $shippingLocation->sepio_shipping_address_id,
             'billingAddressId' => $billingLocation->sepio_billing_address_id,
             'createdBy' => $customer->primary_contact_email ?? $customer->email,
-//            'orderType' => $wallet->costing_type->value === 'credit' ? 'credit' : 'advance',
             'orderType' => 'credit',
             'sealCount' => $order->quantity,
             'orderPorts' => $orderPorts,
-            'unitprice' => (float)$order->unit_price,
-            'totalprice' => (float)$order->seal_cost,
-            'freight' => (float)$order->freight_amount,
-            'tax' => (float)$order->gst_amount,
-            'grandtotal' => (float)$order->total_amount,
-            'creditPeriod' => $wallet->credit_period,
+            'unitprice' => 1,
+            'totalprice' => 1,
+            'freight' => 1,
+            'tax' => 1,
+            'grandtotal' => 1,
+            'creditPeriod' => 30,
             'distributorId' => config('sepio.distributor_id'),
             'deliveryId' => '1',
             'discrate' => 0,
             'purchaseOrderNumber' => null,
             'isSezUser' => 0,
             'sepioURL' => 'sepio/orders',
-            // 'reqId' => $order->order_ref,
             'totalRoundOff' => 0,
             'shippingInfo' => [
                 'address' => $shippingLocation->address,
@@ -89,7 +85,11 @@ readonly class SepioOrderService
                 'state' => strtoupper($billingLocation->state),
                 'zip' => $billingLocation->pincode,
             ],
-        ]);
+        ];
+
+        SepioPayloadValidator::placeOrder($payload);
+
+        $response = $this->client->postAs($customer, '/companyadmin/placedorder', $payload);
 
         if ($response->failed() || empty($response->json('orderId'))) {
             $json = $response->json() ?? [];

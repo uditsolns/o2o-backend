@@ -40,8 +40,7 @@ readonly class SepioOnboardingService
 
         $plainPassword = Str::random(16);
 
-
-        $response = $this->client->post('/registrationModule/registercompany', [
+        $payload = [
             'companydetailsInfo' => [
                 'companyName' => $customer->company_name,
                 'IEC' => $customer->iec_number,
@@ -49,8 +48,6 @@ readonly class SepioOnboardingService
                 'port' => $this->formatPortList($ports),
                 'icd' => $this->formatPortList($icds),
                 'cfsLocation' => $this->formatPortList($cfsItems, first: true),
-                // 'chaUser' => $customer->cha_number ?? '',
-                // 'chaId' => $customer->cha_number ?? '',
                 'distributorId' => config('sepio.distributor_id'),
                 'sepioURL' => 'sepio/companies',
             ],
@@ -64,7 +61,11 @@ readonly class SepioOnboardingService
                 'isAdmin' => true,
             ],
             'register_from_type' => config('sepio.register_from_type'),
-        ]);
+        ];
+
+        SepioPayloadValidator::registerCompany($payload);
+
+        $response = $this->client->post('/registrationModule/registercompany', $payload);
 
         if ($response->failed() || empty($response->json('company_id'))) {
             $json = $response->json() ?? [];
@@ -122,7 +123,7 @@ readonly class SepioOnboardingService
      */
     public function syncLocation(Customer $customer, CustomerLocation $location): void
     {
-        $response = $this->client->postAs($customer, '/registrationModule/updateaddress', [
+        $payload = [
             'createdBy' => $customer->primary_contact_email ?? $customer->email,
             'companyId' => $customer->sepio_company_id,
             'billingAddressInfo' => [
@@ -146,9 +147,13 @@ readonly class SepioOnboardingService
                 ]],
             ],
             'fclFlag' => 1,
-            'cfsFlag' => 1,
+            'cfsFlag' => 0,
             'warehouseFlag' => 0,
-        ]);
+        ];
+
+        SepioPayloadValidator::updateAddress($payload);
+
+        $response = $this->client->postAs($customer, '/registrationModule/updateaddress', $payload);
 
         if ($response->failed()) {
             Log::error('Sepio syncLocation failed', [
@@ -249,9 +254,11 @@ readonly class SepioOnboardingService
                 'documentExtension' => $extension,
                 'documentName' => $mapping['documentName'],
                 'fclFlag' => 1,
-                'cfsFlag' => 1,
+                'cfsFlag' => 0,
                 'warehouseFlag' => 0,
             ];
+
+        SepioPayloadValidator::uploadKyc($payload);
 
         $baseName = preg_replace('/[.\s]+/', '_', pathinfo($document->file_name, PATHINFO_FILENAME));
         $safeFileName = $baseName . '.' . $extension;
@@ -283,6 +290,63 @@ readonly class SepioOnboardingService
             'doc_type' => $docType,
             'sepio_file_name' => $fileName,
         ]);
+    }
+
+    public function updateCompanyDetails(Customer $customer): void
+    {
+        if (!$customer->sepio_company_id) return;
+
+        $ports = $customer->ports()->where('port_category', 'port')->get();
+        $icds = $customer->ports()->where('port_category', 'icd')->get();
+
+        $billingResponse = $this->client->getAs($customer, '/registrationModule/getbillinglistnew', [
+            'companyId' => $customer->sepio_company_id,
+        ]);
+
+        $shippingResponse = $this->client->getAs($customer, '/registrationModule/getshippinglist', [
+            'companyId' => $customer->sepio_company_id,
+        ]);
+
+        if ($billingResponse->failed() || $shippingResponse->failed()) {
+            Log::error('Sepio updateCompanyDetails: failed to fetch address lists', [
+                'customer_id' => $customer->id,
+            ]);
+            return;
+        }
+
+        $payload = [
+            'companyAddressInfo' => [
+                'companyName' => $customer->company_name,
+                'paymentTerms' => 'credit',
+                'creditPeriod' => 30,
+                'port' => $this->formatPortList($ports),
+                'icd' => $this->formatPortList($icds),
+                'unitPriceLock' => 0,
+                'distributorId' => config('sepio.distributor_id'),
+                'isDistributorChanged' => 0,
+                'sendScanEmail' => 0,
+                'fclFlag' => 1,
+                'cfsFlag' => 0,
+                'warehouseFlag' => 0,
+                'freightInclusive' => 0,
+            ],
+            'billingAddressInfo' => $billingResponse->json('data', []),
+            'shippingAddressInfo' => $shippingResponse->json('data', []),
+        ];
+
+        SepioPayloadValidator::updateCompanyDetails($payload);
+
+        $response = $this->client->postAs($customer, '/registrationModule/updatecompanydetailsnew', $payload);
+
+        if ($response->failed()) {
+            Log::error('Sepio updateCompanyDetails failed', [
+                'customer_id' => $customer->id,
+                'response' => $response->json(),
+            ]);
+            return;
+        }
+
+        Log::info('Sepio company details updated', ['customer_id' => $customer->id]);
     }
 
     // Private helpers

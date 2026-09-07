@@ -2,6 +2,7 @@
 
 return [
     'base_url' => env('SEPIO_BASE_URL', 'https://api-test.sepioproducts.com'),
+    'login_endpoint' => env('SEPIO_LOGIN_ENDPOINT', '/users/login'),
     'register_from_type' => 'ILGIC',        // confirmed field name
     'distributor_id' => env('SEPIO_DISTRIBUTOR_ID', 'D100247'),
     'encrypt_key' => env('SEPIO_ENCRYPT_KEY'),   // 32-char UTF-8
